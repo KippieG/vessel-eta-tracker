@@ -103,7 +103,7 @@
     .wx-src{font-size:.57rem;color:var(--muted);margin-top:1px;}
 
     /* ── Layout ── */
-    .main-layout{display:grid;grid-template-columns:1fr 368px;grid-template-rows:1fr 178px;flex:1;overflow:hidden;}
+    .main-layout{display:grid;grid-template-columns:1fr 440px;grid-template-rows:1fr 178px;flex:1;overflow:hidden;}
 
     /* ── Map ── */
     .map-wrap{position:relative;grid-column:1;grid-row:1;overflow:hidden;}
@@ -130,7 +130,8 @@
 
     /* ── Sidebar ── */
     #sidebar{background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;grid-column:2;grid-row:1/3;}
-    .filter-bar{padding:.4rem .7rem;border-bottom:1px solid var(--border);display:flex;gap:.28rem;align-items:center;flex-shrink:0;}
+    .filter-bar{padding:.35rem .7rem;border-bottom:1px solid var(--border);display:flex;gap:.25rem;align-items:center;flex-shrink:0;flex-wrap:nowrap;}
+    .filter-bar+.filter-bar{border-top:none;padding-top:.25rem;padding-bottom:.35rem;}
     .search{flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:.24rem .55rem;border-radius:5px;font-size:.74rem;outline:none;}
     .search:focus{border-color:var(--accent-hi);}
     .search::placeholder{color:var(--muted);}
@@ -401,10 +402,18 @@
   <!-- Sidebar -->
   <div id="sidebar">
     <div class="filter-bar">
-      <input class="search" id="srch" placeholder="Search vessel, service, berth…" oninput="renderList()"/>
-      <button class="pill on" onclick="setFilter('all',this)">All</button>
-      <button class="pill"    onclick="setFilter('4h',this)">4h</button>
-      <button class="pill"    onclick="setFilter('12h',this)">12h</button>
+      <input class="search" id="srch" placeholder="Search vessel, destination, berth…" oninput="renderList()"/>
+      <button class="pill on" id="fp-all"  onclick="setFilter('all',this)">All</button>
+      <button class="pill"    id="fp-4h"   onclick="setFilter('4h',this)">4h</button>
+      <button class="pill"    id="fp-12h"  onclick="setFilter('12h',this)">12h</button>
+      <button class="pill"    id="fp-appr" onclick="setFilter('appr',this)">Appr</button>
+    </div>
+    <div class="filter-bar" style="padding-top:0;border-top:none;gap:.25rem;">
+      <span style="font-size:.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600;flex-shrink:0;">Type:</span>
+      <button class="pill on" id="ft-all"   onclick="setTypeFilter('all',this)">All</button>
+      <button class="pill"    id="ft-cargo" onclick="setTypeFilter('cargo',this)">Cargo</button>
+      <button class="pill"    id="ft-tank"  onclick="setTypeFilter('tank',this)">Tanker</button>
+      <button class="pill"    id="ft-zee"   onclick="setTypeFilter('zee',this)">→ BEZEE</button>
     </div>
 
     <div class="sec-head">
@@ -619,24 +628,22 @@ DEMO_SEED.forEach(s => { SCHEDULE[s.mmsi] = s; SCHEDULE[s.name] = s; });
 const ZEE_DESTS = ['ZEE','BEZEE','BRUGGE','BRUG','ZBRG','GHENT','GENT','ANTW','TERN','GHNT'];
 
 function isRelevantVessel(v) {
+  if (SPECS[v.mmsi]) return true;
   const t = v.shipType;
   const dest = (v.dest || '').toUpperCase();
-  // Skip recreational, fishing, small craft
-  if (t && (t < 30 || (t >= 36 && t <= 39) || t === 52)) return false;
-  if (t && t >= 30 && t <= 35) return false; // fishing
-  // Always keep known scheduled vessels
-  if (SPECS[v.mmsi]) return true;
-  // Keep if destination is Zeebrugge/Belgian port area
+  // Explicitly drop leisure / pure fishing
+  if (t === 36 || t === 37) return false; // sailing / pleasure craft
+  if (t === 30) return false;             // fishing
+  // Keep any vessel with Zeebrugge-area destination
   if (dest && ZEE_DESTS.some(d => dest.includes(d))) return true;
-  // Keep cargo (70-79), tanker (80-89), container ships
+  // Keep cargo + tankers
   if (t && t >= 70 && t <= 89) return true;
-  // Keep large unknown ships heading toward port
-  if (!t && v.sog > 5 && v.distKm && v.distKm < 200) {
-    const b = bearing(v.lat, v.lon, PORT.lat, PORT.lon);
-    const diff = Math.abs(((v.cog||0) - b + 360) % 360);
-    if (diff < 80 || diff > 280) return true; // heading toward port
-  }
-  // Drop if no useful type info and not heading toward port
+  // Keep service/pilot/SAR/towing
+  if (t && (t === 50 || t === 51 || t === 52 || (t >= 31 && t <= 35))) return true;
+  // No type yet → keep if moving (commercial ships move at 5+ kn)
+  if (!t && v.sog > 3) return true;
+  // Type known but not a good category and no ZEE destination → drop
+  if (t) return false;
   return false;
 }
 
@@ -676,8 +683,9 @@ function scheduleRender() {
   _renderPending = true;
   setTimeout(() => {
     _renderPending = false;
+    detectConflicts();
     renderList(); renderTimeline(); updateKPIs(); updCounters(); updTime(); updateNextArrivalKPI();
-  }, 800);
+  }, 600);
 }
 
 // ─── App state ────────────────────────────────────────────────────────────────
@@ -875,8 +883,7 @@ function autoConnect(key) {
     }, 20000);
   };
   ws.onmessage = e => {
-    console.log('[AIS raw]', e.data.slice(0, 200));
-    try { onAIS(JSON.parse(e.data)); } catch(err) { console.warn('[AIS parse error]', err); }
+    try { onAIS(JSON.parse(e.data)); } catch(_) {}
   };
   ws.onerror = () => {
     isConnecting = false;
@@ -1038,8 +1045,6 @@ function onAIS(msg) {
   if (totalMsgsReceived === 1) {
     if (ws?._hideTimer) clearTimeout(ws._hideTimer);
     hideConnOverlay();
-    // Log the very first message so we can see what aisstream.io is sending
-    console.log('[AIS first msg]', JSON.stringify(msg).slice(0, 300));
   }
   // Handle aisstream.io error responses
   if (msg.error || msg.Error || msg.message || msg.status) {
@@ -1125,7 +1130,6 @@ function applyVessel(mmsi, data) {
     if (selectedMmsi === mmsi) renderDetail(vessels[mmsi]);
   }
 
-  detectConflicts();
   scheduleRender();
 }
 
@@ -1236,9 +1240,18 @@ function renderDetail(v) {
 }
 
 // ─── Vessel list ──────────────────────────────────────────────────────────────
+let curTypeFilter = 'all';
+
 function setFilter(f, el) {
   curFilter=f;
-  document.querySelectorAll('.pill').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('#fp-all,#fp-4h,#fp-12h,#fp-appr').forEach(p=>p.classList.remove('on'));
+  el.classList.add('on');
+  renderList();
+}
+
+function setTypeFilter(f, el) {
+  curTypeFilter=f;
+  document.querySelectorAll('#ft-all,#ft-cargo,#ft-tank,#ft-zee').forEach(p=>p.classList.remove('on'));
   el.classList.add('on');
   renderList();
 }
@@ -1246,15 +1259,27 @@ function setFilter(f, el) {
 function renderList() {
   const q = document.getElementById('srch').value.toLowerCase();
   let rows = Object.values(vessels).filter(v=>v.lat)
-    .sort((a,b)=>(a.distKm||999)-(b.distKm||999));
-  if (curFilter==='4h')  rows=rows.filter(v=>v.calcEta && v.calcEta-Date.now()<4*3600000 && v.calcEta>Date.now());
-  if (curFilter==='12h') rows=rows.filter(v=>v.calcEta && v.calcEta-Date.now()<12*3600000 && v.calcEta>Date.now());
+    .sort((a,b)=>(a.distKm||9999)-(b.distKm||9999));
+
+  // Time horizon filter
+  const now = Date.now();
+  if (curFilter==='4h')   rows=rows.filter(v=>v.calcEta && v.calcEta-now<4*3600000 && v.calcEta>now);
+  if (curFilter==='12h')  rows=rows.filter(v=>v.calcEta && v.calcEta-now<12*3600000 && v.calcEta>now);
+  if (curFilter==='appr') rows=rows.filter(v=>v.distKm!=null && v.distKm<25);
+
+  // Type filter
+  if (curTypeFilter==='cargo') rows=rows.filter(v=>v.shipType && v.shipType>=70 && v.shipType<=79);
+  if (curTypeFilter==='tank')  rows=rows.filter(v=>v.shipType && v.shipType>=80 && v.shipType<=89);
+  if (curTypeFilter==='zee')   rows=rows.filter(v=>ZEE_DESTS.some(d=>((v.dest||'').toUpperCase()).includes(d)));
+
+  // Text search
   if (q) rows=rows.filter(v=>
     (v.name||'').toLowerCase().includes(q)||
     (v.svc||'').toLowerCase().includes(q)||
     (v.voy||'').toLowerCase().includes(q)||
     (v.berth||'').toLowerCase().includes(q)||
-    (v.dest||'').toLowerCase().includes(q)
+    (v.dest||'').toLowerCase().includes(q)||
+    (v.mmsi||'').includes(q)
   );
 
   const el=document.getElementById('vessel-list');
@@ -1300,10 +1325,11 @@ function renderList() {
         ${hasConf?`<span class="conf-icon" title="Berth conflict">⚓</span>`:''}
       </div>
       <div class="vmeta-row">
+        ${v.calcEta&&relETA&&relETA!='—'?`<span class="vmeta" style="color:${isAppr?'#d4a020':etaCol(v.dev)};font-weight:600">⏱ ${relETA}</span>`:''}
+        ${v.calcEta?`<span class="vmeta">${fmtTime(v.calcEta)}</span>`:'<span class="vmeta" style="color:var(--muted)">no ETA</span>'}
+        ${v.distKm!=null?`<span class="vmeta">📍 ${v.distKm} km</span>`:''}
         <span class="vmeta">⚡ ${(v.sog||0).toFixed(1)} kn</span>
-        ${v.distKm?`<span class="vmeta">📍 ${v.distKm} km</span>`:''}
-        <span class="vmeta">${v.calcEta?'ETA '+fmtTime(v.calcEta)+(relETA&&relETA!='—'?' ('+relETA+')':''):'no ETA'}</span>
-        ${destLbl?`<span class="vmeta" style="color:${hasZee?'#3fc05a':'var(--muted)'}">→ ${destLbl}</span>`:''}
+        ${destLbl&&!v.svc?`<span class="vmeta" style="color:${hasZee?'#3fc05a':'var(--muted)'}">→ ${destLbl}</span>`:''}
         ${stale?'<span class="vmeta" style="color:var(--yellow)">⚠ stale</span>':''}
       </div>
     </div>`;
