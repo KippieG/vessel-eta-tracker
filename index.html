@@ -556,19 +556,18 @@ function getWsUrl() {
 }
 
 function buildSubscription(key) {
-  const loc = window.location;
-  const isProxy = loc.hostname === 'localhost' || loc.hostname === '127.0.0.1';
-  if (isProxy) {
-    // Proxy expects the full subscription object and handles aisstream.io itself
-    return JSON.stringify({ APIKey: key, BoundingBoxes: [BBOX] });
-  }
-  return JSON.stringify({ APIKey: key, BoundingBoxes: [BBOX] });
+  return JSON.stringify({
+    APIKey: key,
+    BoundingBoxes: [BBOX],
+    FilterMessageTypes: ['PositionReport','ShipStaticData','StandardClassBPositionReport']
+  });
 }
 
 // ─── Reference data ───────────────────────────────────────────────────────────
 const PORT  = { lat:51.3476, lon:3.1963 };
 const PILOT = { lat:51.2341, lon:2.8982 };
-const BBOX  = [[50.2, 0.8],[52.8, 5.0]]; // wider North Sea approach
+const BBOX  = [[50.8, 1.5],[52.2, 4.8]]; // North Sea approach to Zeebrugge
+const MAX_VESSELS = 60;
 const TL_H  = 24;
 
 const BERTHS = [
@@ -604,6 +603,71 @@ const DEMO_SEED = [
 // Expected arrivals schedule (for cross-referencing live vessels)
 const SCHEDULE = {};
 DEMO_SEED.forEach(s => { SCHEDULE[s.mmsi] = s; SCHEDULE[s.name] = s; });
+
+// ─── Vessel relevance & type helpers ─────────────────────────────────────────
+const ZEE_DESTS = ['ZEE','BEZEE','BRUGGE','BRUG','ZBRG','GHENT','GENT','ANTW','TERN','GHNT'];
+
+function isRelevantVessel(v) {
+  const t = v.shipType;
+  const dest = (v.dest || '').toUpperCase();
+  // Skip recreational, fishing, small craft
+  if (t && (t < 30 || (t >= 36 && t <= 39) || t === 52)) return false;
+  if (t && t >= 30 && t <= 35) return false; // fishing
+  // Always keep known scheduled vessels
+  if (SPECS[v.mmsi]) return true;
+  // Keep if destination is Zeebrugge/Belgian port area
+  if (dest && ZEE_DESTS.some(d => dest.includes(d))) return true;
+  // Keep cargo (70-79), tanker (80-89), container ships
+  if (t && t >= 70 && t <= 89) return true;
+  // Keep large unknown ships heading toward port
+  if (!t && v.sog > 5 && v.distKm && v.distKm < 200) {
+    const b = bearing(v.lat, v.lon, PORT.lat, PORT.lon);
+    const diff = Math.abs(((v.cog||0) - b + 360) % 360);
+    if (diff < 80 || diff > 280) return true; // heading toward port
+  }
+  // Drop if no useful type info and not heading toward port
+  return false;
+}
+
+function shipTypeName(t) {
+  if (!t) return '';
+  if (t >= 70 && t <= 79) return 'CARGO';
+  if (t === 70) return 'CARGO';
+  if (t === 71) return 'CONTAINER';
+  if (t === 72) return 'BULKER';
+  if (t === 73) return 'CONTAINER';
+  if (t === 74) return 'CONTAINER';
+  if (t >= 80 && t <= 89) return 'TANKER';
+  if (t === 80) return 'TANKER';
+  if (t === 84) return 'LNG';
+  if (t >= 60 && t <= 69) return 'PASS';
+  if (t >= 50 && t <= 59) return 'SVC';
+  if (t >= 30 && t <= 39) return 'FISH';
+  return '';
+}
+
+function vesselRelevanceScore(v) {
+  let score = 0;
+  const dest = (v.dest || '').toUpperCase();
+  if (ZEE_DESTS.some(d => dest.includes(d))) score += 100;
+  if (SPECS[v.mmsi]) score += 80;
+  if (v.schedEta) score += 60;
+  const t = v.shipType;
+  if (t && t >= 70 && t <= 89) score += 40;
+  if (v.distKm) score -= Math.min(v.distKm / 5, 30); // closer = higher score
+  return score;
+}
+
+// ─── Render throttle ─────────────────────────────────────────────────────────
+let _renderPending = false;
+function scheduleRender() {
+  if (_renderPending) return;
+  _renderPending = true;
+  setTimeout(() => {
+    _renderPending = false;
+    renderList(); renderTimeline(); updateKPIs(); updCounters(); updTime();
+  }, 800);
+}
 
 // ─── App state ────────────────────────────────────────────────────────────────
 let ws=null, vessels={}, markers={}, selectedMmsi=null;
@@ -926,7 +990,7 @@ function tickDemo() {
     putMarker(v.mmsi);
     if (selectedMmsi===v.mmsi){updateApproachLine(v);renderDetail(v);}
   });
-  detectConflicts(); updateChart(); renderList(); renderTimeline(); updateKPIs(); updCounters(); updTime();
+  detectConflicts(); updateChart(); scheduleRender();
 }
 
 function resetVessel(v) {
@@ -997,27 +1061,55 @@ function onAIS(msg) {
 }
 
 function applyVessel(mmsi, data) {
-  vessels[mmsi]={...(vessels[mmsi]||{}),...data,mmsi};
-  const v=vessels[mmsi];
-  if (v.lat&&v.lon&&v.sog>.5) {
-    const dist=hav(v.lat,v.lon,PORT.lat,PORT.lon);
-    v.distKm=Math.round(dist);
-    v.calcEta=new Date(Date.now()+(dist/(v.sog*1.852))*3600000);
-    // Try to match against expected arrivals schedule
-    const sched=SCHEDULE[mmsi]||SCHEDULE[v.name];
-    if (sched&&!v.schedEta) {
-      v.schedEta=new Date(v.calcEta.getTime()-sched.dev*60000);
+  const existing = vessels[mmsi];
+  vessels[mmsi] = {...(existing||{}),...data,mmsi};
+  const v = vessels[mmsi];
+
+  if (v.lat && v.lon) {
+    const dist = hav(v.lat, v.lon, PORT.lat, PORT.lon);
+    v.distKm = Math.round(dist);
+    if (v.sog > 0.3) {
+      v.calcEta = new Date(Date.now() + (dist/(v.sog*1.852))*3600000);
+    }
+    // Match against expected arrivals schedule
+    const sched = SCHEDULE[mmsi] || SCHEDULE[v.name];
+    if (sched && !v.schedEta && v.calcEta) {
+      v.schedEta = new Date(v.calcEta.getTime() - sched.dev*60000);
       v.svc=sched.svc; v.voy=sched.voy; v.berth=sched.berth;
     }
-    if (v.schedEta) {
-      v.dev=Math.round((v.calcEta-v.schedEta)/60000);
-      etaHist.push({t:new Date(),dev:v.dev});
+    if (v.schedEta && v.calcEta) {
+      v.dev = Math.round((v.calcEta - v.schedEta)/60000);
+      etaHist.push({t:new Date(), dev:v.dev});
       if (etaHist.length>40) etaHist.shift();
-      if (Math.abs(v.dev)>=CFG.critMin&&!alerted.has(mmsi)) fireAlert(mmsi);
+      if (Math.abs(v.dev)>=CFG.critMin && !alerted.has(mmsi)) fireAlert(mmsi);
     }
   }
-  putMarker(mmsi); detectConflicts();
-  renderList(); renderTimeline(); updateKPIs(); updCounters(); updTime();
+
+  // Filter: only keep relevant vessels for CSP Zeebrugge
+  if (!isRelevantVessel(v) && !SPECS[mmsi]) {
+    if (markers[mmsi]) { markers[mmsi].remove(); delete markers[mmsi]; }
+    delete vessels[mmsi];
+    return;
+  }
+
+  // Cap total vessels — drop lowest-scored when over limit
+  const allMmsi = Object.keys(vessels);
+  if (allMmsi.length > MAX_VESSELS) {
+    const sorted = allMmsi.sort((a,b) => vesselRelevanceScore(vessels[a]) - vesselRelevanceScore(vessels[b]));
+    const toDrop = sorted.slice(0, allMmsi.length - MAX_VESSELS);
+    toDrop.forEach(m => {
+      if (markers[m]) { markers[m].remove(); delete markers[m]; }
+      delete vessels[m];
+    });
+  }
+
+  if (vessels[mmsi]) {
+    putMarker(mmsi);
+    if (selectedMmsi === mmsi) renderDetail(vessels[mmsi]);
+  }
+
+  detectConflicts();
+  scheduleRender();
 }
 
 // ─── Map markers ──────────────────────────────────────────────────────────────
@@ -1085,25 +1177,32 @@ function renderDetail(v) {
   const impactHtml=conf
     ? `<div class="impact-row">⚠ Berth ${conf.berth} — ops window conflict with ${(conf.v1.mmsi===v.mmsi?conf.v2:conf.v1).name}</div>`
     : '';
+  const typeLbl = sp.type || shipTypeName(v.shipType);
+  const hasZee  = ZEE_DESTS.some(d=>((v.dest||'').toUpperCase()).includes(d));
   document.getElementById('dinn').innerHTML=`
     <div class="dhead">
       <div>
         <div class="dname">${v.name||v.mmsi}</div>
-        ${v.voy?`<div class="dvoy">${v.svc||''} · Voyage ${v.voy}</div>`:
-          (v.dest?`<div class="dvoy">Destination: ${v.dest}</div>`:'')}
+        <div class="dvoy">${
+          v.voy ? `${v.svc||''} · Voyage ${v.voy}` :
+          v.dest ? `Destination: <span style="color:${hasZee?'#3fc05a':'var(--text2)'}">${v.dest.trim()}</span>` :
+          `MMSI: ${v.mmsi}`
+        }</div>
       </div>
       <button class="dclose" onclick="closeDetail()">✕</button>
     </div>
     <div class="dgrid">
-      <div class="dfield"><span class="df-label">Service</span><span class="df-val" style="color:#5aabdb">${v.svc||'—'}</span></div>
-      <div class="dfield"><span class="df-label">Berth</span><span class="df-val" style="color:#a07fe0">${v.berth||'TBC'}</span></div>
+      ${v.svc?`<div class="dfield"><span class="df-label">Service</span><span class="df-val" style="color:#5aabdb">${v.svc}</span></div>`:''}
+      ${v.berth?`<div class="dfield"><span class="df-label">Berth</span><span class="df-val" style="color:#a07fe0">${v.berth}</span></div>`:''}
+      ${typeLbl?`<div class="dfield"><span class="df-label">Ship Type</span><span class="df-val" style="color:#4ac96a">${typeLbl}</span></div>`:''}
       <div class="dfield"><span class="df-label">Speed</span><span class="df-val">${v.sog?v.sog.toFixed(1)+' kn':'—'}</span></div>
+      <div class="dfield"><span class="df-label">Course</span><span class="df-val">${v.cog!=null?Math.round(v.cog)+'°':'—'}</span></div>
       <div class="dfield"><span class="df-label">Distance to port</span><span class="df-val">${v.distKm!=null?v.distKm+' km':'—'}</span></div>
-      <div class="dfield"><span class="df-label">Scheduled ETA</span><span class="df-val">${v.schedEta?fmtTime(v.schedEta):'—'}</span></div>
-      <div class="dfield"><span class="df-label">Calculated ETA</span><span class="df-val">${v.calcEta?fmtTime(v.calcEta):'—'}</span></div>
+      <div class="dfield"><span class="df-label">Calc ETA Zeebrugge</span><span class="df-val">${v.calcEta?fmtTime(v.calcEta):'—'}</span></div>
+      ${v.schedEta?`<div class="dfield"><span class="df-label">Scheduled ETA</span><span class="df-val">${fmtTime(v.schedEta)}</span></div>`:''}
       ${sp.teu?`<div class="dfield"><span class="df-label">Capacity</span><span class="df-val">${sp.teu.toLocaleString()} TEU</span></div>`:''}
       ${sp.loa?`<div class="dfield"><span class="df-label">LOA / Draft</span><span class="df-val">${sp.loa} m / ${sp.draft} m</span></div>`:''}
-      ${sp.ops?`<div class="dfield"><span class="df-label">Ops window</span><span class="df-val">~${sp.ops} h at berth</span></div>`:''}
+      ${sp.ops?`<div class="dfield"><span class="df-label">Ops window</span><span class="df-val">~${sp.ops} h</span></div>`:''}
       ${sp.agent?`<div class="dfield" style="grid-column:1/-1"><span class="df-label">Shipping Agent</span><span class="df-val" style="font-size:.71rem">${sp.agent}</span></div>`:''}
     </div>
     ${v.dev!==undefined?`<div class="dev-row"><div><div class="dev-label">ETA Deviation</div><div class="dev-status">${status}</div></div><div class="dev-val" style="color:${col}">${sign}${v.dev} min</div></div>`:''}
@@ -1159,19 +1258,23 @@ function renderList() {
     const stale=v.lastSeen&&(Date.now()-v.lastSeen)>300000;
     const hasConf=conflicts.some(c=>c.v1.mmsi===v.mmsi||c.v2.mmsi===v.mmsi);
     const sp=SPECS[v.mmsi]||{};
+    const typeLbl = sp.type || shipTypeName(v.shipType);
+    const destLbl = v.dest && !v.svc ? v.dest.trim().slice(0,10) : '';
+    const hasZee = ZEE_DESTS.some(d=>((v.dest||'').toUpperCase()).includes(d));
     return `<div class="vrow${selectedMmsi===v.mmsi?' sel':''}${stale?' stale':''}" onclick="selectVessel('${v.mmsi}')">
       <div class="vrow-top">
         <span class="vname">${v.name||v.mmsi}</span>
         ${v.svc?`<span class="tag-svc">${v.svc}</span>`:''}
         ${v.berth?`<span class="tag-berth">${v.berth}</span>`:''}
-        ${sp.type?`<span class="tag-type">${sp.type}</span>`:''}
+        ${typeLbl?`<span class="tag-type">${typeLbl}</span>`:''}
         ${bt?`<span class="etab ${bc}">${bt}</span>`:''}
         ${hasConf?`<span class="conf-icon" title="Berth conflict">⚓</span>`:''}
       </div>
       <div class="vmeta-row">
         <span class="vmeta">⚡ ${(v.sog||0).toFixed(1)} kn</span>
         ${v.distKm?`<span class="vmeta">📍 ${v.distKm} km</span>`:''}
-        <span class="vmeta">ETA ${v.calcEta?fmtTime(v.calcEta):'—'}</span>
+        <span class="vmeta">${v.calcEta?'ETA '+fmtTime(v.calcEta):'no ETA'}</span>
+        ${destLbl?`<span class="vmeta" style="color:${hasZee?'#3fc05a':'var(--muted)'}">→ ${destLbl}</span>`:''}
         ${stale?'<span class="vmeta" style="color:var(--yellow)">⚠ stale</span>':''}
       </div>
     </div>`;
@@ -1414,6 +1517,20 @@ window.addEventListener('load', () => {
     updTime();
     if (Object.keys(vessels).length) renderTimeline();
   }, 15000);
+
+  // Remove stale vessels (no update in 12 min)
+  setInterval(() => {
+    const cutoff = Date.now() - 12 * 60000;
+    Object.keys(vessels).forEach(mmsi => {
+      const v = vessels[mmsi];
+      if (v.lastSeen && v.lastSeen.getTime() < cutoff) {
+        if (markers[mmsi]) { markers[mmsi].remove(); delete markers[mmsi]; }
+        if (selectedMmsi === mmsi) closeDetail();
+        delete vessels[mmsi];
+      }
+    });
+    scheduleRender();
+  }, 120000);
 });
 </script>
 </body>
