@@ -1,391 +1,594 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Vessel ETA Tracker — CSP Zeebrugge</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <style>
-    :root {
-      --bg:#0d1117;--surface:#161b22;--surface2:#21262d;--border:#30363d;
-      --text:#e6edf3;--muted:#8b949e;--accent:#388bfd;--green:#3fb950;
-      --red:#f85149;--yellow:#d29922;--font:'Segoe UI',system-ui,sans-serif;
-    }
-    *{box-sizing:border-box;margin:0;padding:0;}
-    body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;height:100vh;display:flex;flex-direction:column;overflow:hidden;}
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>CSP Zeebrugge — Live Vessel Monitor</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+:root{
+  --bg:#080c12;--surface:#0f1621;--surface2:#161e2d;--border:#1e2d42;
+  --text:#e8eef5;--muted:#6b7a8d;--accent:#2d8cff;--green:#00d4a0;
+  --red:#ff4757;--yellow:#ffa502;--orange:#ff6b35;
+  --font:'Segoe UI',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font);font-size:13px;overflow:hidden;}
 
-    /* Header */
-    header{background:var(--surface);border-bottom:1px solid var(--border);padding:.75rem 1.5rem;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;}
-    .brand{display:flex;align-items:center;gap:.75rem;}
-    .brand-icon{font-size:1.5rem;}
-    .brand h1{font-size:1rem;font-weight:700;}
-    .brand p{color:var(--muted);font-size:.7rem;margin-top:1px;}
-    .header-right{display:flex;align-items:center;gap:1.5rem;}
-    .hkpi{text-align:center;}
-    .hkpi-val{font-size:1.1rem;font-weight:700;color:var(--accent);}
-    .hkpi-label{font-size:.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
-    .status-pill{display:flex;align-items:center;gap:.4rem;background:var(--surface2);border:1px solid var(--border);padding:.3rem .75rem;border-radius:20px;font-size:.75rem;}
-    .dot{width:7px;height:7px;border-radius:50%;background:var(--muted);}
-    .dot.live{background:var(--green);animation:pulse 1.5s infinite;}
-    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+/* ── Layout ── */
+.app{display:grid;grid-template-rows:56px 1fr;height:100vh;}
+.content{display:grid;grid-template-columns:1fr 380px;overflow:hidden;}
 
-    /* Main */
-    .main{display:grid;grid-template-columns:1fr 400px;flex:1;overflow:hidden;}
+/* ── Header ── */
+header{
+  background:linear-gradient(90deg,#0a1628 0%,#0d1f38 100%);
+  border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 1.5rem;gap:1rem;
+}
+.brand{display:flex;align-items:center;gap:.6rem;}
+.brand svg{opacity:.9;}
+.brand-text h1{font-size:.95rem;font-weight:700;letter-spacing:-.01em;}
+.brand-text p{font-size:.65rem;color:var(--muted);margin-top:1px;}
+.header-kpis{display:flex;align-items:center;gap:1.5rem;}
+.kpi{text-align:center;min-width:70px;}
+.kpi-val{font-size:1.2rem;font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums;line-height:1;}
+.kpi-val.green{color:var(--green);}
+.kpi-val.red{color:var(--red);}
+.kpi-val.yellow{color:var(--yellow);}
+.kpi-label{font-size:.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-top:2px;}
+.divider{width:1px;height:28px;background:var(--border);}
+.status-pill{
+  display:flex;align-items:center;gap:.5rem;
+  background:rgba(0,212,160,.06);border:1px solid rgba(0,212,160,.2);
+  padding:.3rem .9rem;border-radius:20px;font-size:.72rem;color:var(--green);font-weight:600;
+}
+.pulse{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 1.5s infinite;}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.8)}}
+.status-pill.off{color:var(--muted);border-color:var(--border);background:transparent;}
+.status-pill.off .pulse{background:var(--muted);animation:none;}
 
-    /* Map */
-    #map{background:#080c12;}
-    .leaflet-container{background:#080c12!important;}
+/* ── Map ── */
+#map{background:var(--bg);}
+.leaflet-container{background:#080c12!important;}
+.leaflet-control-zoom{border:1px solid var(--border)!important;border-radius:6px!important;}
+.leaflet-control-zoom a{
+  background:var(--surface)!important;color:var(--text)!important;
+  border:none!important;width:28px!important;height:28px!important;
+  line-height:28px!important;font-size:16px!important;
+}
+.leaflet-control-zoom a:hover{background:var(--surface2)!important;}
 
-    /* Right panel */
-    .right-panel{display:flex;flex-direction:column;border-left:1px solid var(--border);overflow:hidden;}
+/* ── Alert bar ── */
+#alert-bar{
+  position:absolute;top:60px;left:50%;transform:translateX(-50%);z-index:1000;
+  background:rgba(255,71,87,.12);border:1px solid rgba(255,71,87,.4);
+  padding:.4rem 1rem;border-radius:6px;font-size:.75rem;color:var(--red);
+  display:none;white-space:nowrap;backdrop-filter:blur(8px);
+  box-shadow:0 4px 20px rgba(255,71,87,.2);
+}
 
-    /* Vessel list */
-    .panel-section{flex:1;display:flex;flex-direction:column;overflow:hidden;}
-    .section-header{padding:.6rem 1rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;background:var(--surface);}
-    .section-title{font-size:.72rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
-    .vessel-list{overflow-y:auto;flex:1;}
-    .vessel-row{padding:.6rem 1rem;border-bottom:1px solid var(--surface2);cursor:pointer;}
-    .vessel-row:hover{background:var(--surface2);}
-    .vessel-row.selected{background:rgba(56,139,253,.08);border-left:2px solid var(--accent);}
-    .vr-top{display:flex;align-items:center;gap:.5rem;margin-bottom:3px;}
-    .vname{font-weight:600;font-size:.82rem;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-    .badge{padding:2px 7px;border-radius:10px;font-size:.65rem;font-weight:700;white-space:nowrap;}
-    .b-ok{background:rgba(63,185,80,.15);color:var(--green);}
-    .b-warn{background:rgba(210,153,34,.15);color:var(--yellow);}
-    .b-late{background:rgba(248,81,73,.15);color:var(--red);}
-    .b-grey{background:rgba(139,148,158,.1);color:var(--muted);}
-    .vmeta{font-size:.68rem;color:var(--muted);display:flex;gap:.75rem;flex-wrap:wrap;}
+/* ── Side panel ── */
+.side{
+  display:flex;flex-direction:column;
+  background:var(--surface);border-left:1px solid var(--border);overflow:hidden;
+}
 
-    /* Chart */
-    .chart-section{flex-shrink:0;border-top:1px solid var(--border);padding:.75rem 1rem;background:var(--surface);}
-    .chart-section h3{font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem;}
+/* Schedule section */
+.sched-section{flex-shrink:0;border-bottom:1px solid var(--border);}
+.section-head{
+  padding:.6rem 1rem;background:var(--surface2);
+  display:flex;justify-content:space-between;align-items:center;
+}
+.section-title{font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);}
+.sched-list{max-height:180px;overflow-y:auto;}
+.sched-row{
+  padding:.55rem 1rem;border-bottom:1px solid rgba(30,45,66,.5);
+  display:flex;align-items:center;gap:.75rem;
+}
+.sched-service{
+  font-size:.6rem;font-weight:700;padding:2px 6px;border-radius:3px;
+  background:rgba(45,140,255,.15);color:var(--accent);min-width:30px;text-align:center;
+}
+.sched-name{flex:1;font-size:.78rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.sched-eta{font-size:.7rem;color:var(--muted);}
+.sched-status{font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:10px;}
+.ss-ok{background:rgba(0,212,160,.12);color:var(--green);}
+.ss-warn{background:rgba(255,165,2,.12);color:var(--yellow);}
+.ss-late{background:rgba(255,71,87,.12);color:var(--red);}
+.ss-none{background:rgba(107,122,141,.1);color:var(--muted);}
 
-    /* Alert bar */
-    #alert-bar{display:none;background:rgba(248,81,73,.1);border-bottom:1px solid var(--red);padding:.4rem 1.5rem;font-size:.78rem;color:var(--red);flex-shrink:0;}
+/* Live vessels */
+.live-section{flex:1;display:flex;flex-direction:column;overflow:hidden;}
+.vessel-list{flex:1;overflow-y:auto;}
+.vessel-list::-webkit-scrollbar{width:4px;}
+.vessel-list::-webkit-scrollbar-track{background:transparent;}
+.vessel-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
 
-    /* Tooltip */
-    .vessel-tooltip{background:var(--surface)!important;border:1px solid var(--border)!important;color:var(--text)!important;font-family:var(--font)!important;font-size:11px!important;padding:6px 10px!important;border-radius:6px!important;box-shadow:0 4px 16px rgba(0,0,0,.5)!important;}
+.vrow{
+  padding:.6rem 1rem;border-bottom:1px solid rgba(30,45,66,.5);
+  cursor:pointer;transition:background .1s;position:relative;
+}
+.vrow:hover{background:var(--surface2);}
+.vrow.selected{background:rgba(45,140,255,.06);border-left:2px solid var(--accent);}
+.vrow-top{display:flex;align-items:center;gap:.5rem;margin-bottom:3px;}
+.vname{flex:1;font-size:.8rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.dev-badge{font-size:.63rem;font-weight:800;padding:2px 7px;border-radius:10px;white-space:nowrap;}
+.db-ok{background:rgba(0,212,160,.12);color:var(--green);}
+.db-warn{background:rgba(255,165,2,.12);color:var(--yellow);}
+.db-late{background:rgba(255,71,87,.12);color:var(--red);}
+.db-grey{background:rgba(107,122,141,.08);color:var(--muted);}
+.vmeta{font-size:.65rem;color:var(--muted);display:flex;gap:.6rem;flex-wrap:wrap;}
+.vmeta span{display:flex;align-items:center;gap:2px;}
 
-    /* Placeholder */
-    .placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--muted);gap:.5rem;font-size:.82rem;}
-    .placeholder-icon{font-size:2rem;opacity:.3;}
-  </style>
+/* Chart */
+.chart-section{
+  flex-shrink:0;padding:.75rem 1rem 1rem;
+  border-top:1px solid var(--border);background:var(--surface2);
+}
+.chart-title{font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:.6rem;}
+
+/* Empty state */
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:.6rem;color:var(--muted);}
+.empty-icon{font-size:2.5rem;opacity:.2;}
+
+/* Map tooltip */
+.vtip{
+  background:var(--surface)!important;border:1px solid var(--border)!important;
+  color:var(--text)!important;font-family:var(--font)!important;
+  font-size:11px!important;padding:8px 12px!important;
+  border-radius:8px!important;box-shadow:0 8px 32px rgba(0,0,0,.6)!important;
+  line-height:1.6!important;
+}
+</style>
 </head>
 <body>
+<div class="app">
 
+<!-- Header -->
 <header>
   <div class="brand">
-    <span class="brand-icon">⚓</span>
-    <div>
-      <h1>CSP Zeebrugge — Vessel ETA Monitor</h1>
-      <p>Live AIS · North Sea approach · Navis N4 schedule comparison</p>
+    <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+      <circle cx="14" cy="14" r="13" stroke="#2d8cff" stroke-width="1.5" fill="rgba(45,140,255,.08)"/>
+      <text x="14" y="19" text-anchor="middle" font-size="13">⚓</text>
+    </svg>
+    <div class="brand-text">
+      <h1>CSP Zeebrugge — Live Vessel Monitor</h1>
+      <p>Real-time AIS · North Sea & English Channel · Navis N4 schedule comparison</p>
     </div>
   </div>
-  <div class="header-right">
-    <div class="hkpi"><div class="hkpi-val" id="h-vessels">0</div><div class="hkpi-label">Vessels tracked</div></div>
-    <div class="hkpi"><div class="hkpi-val" id="h-alerts">0</div><div class="hkpi-label">ETA alerts</div></div>
-    <div class="hkpi"><div class="hkpi-val" id="h-msgs">0</div><div class="hkpi-label">AIS messages</div></div>
-    <div class="status-pill">
-      <span class="dot" id="status-dot"></span>
+  <div class="header-kpis">
+    <div class="kpi"><div class="kpi-val green" id="h-vessels">0</div><div class="kpi-label">Vessels</div></div>
+    <div class="divider"></div>
+    <div class="kpi"><div class="kpi-val red" id="h-alerts">0</div><div class="kpi-label">ETA Alerts</div></div>
+    <div class="divider"></div>
+    <div class="kpi"><div class="kpi-val yellow" id="h-speed">—</div><div class="kpi-label">Avg Speed (kn)</div></div>
+    <div class="divider"></div>
+    <div class="kpi"><div class="kpi-val" id="h-msgs">0</div><div class="kpi-label">AIS Messages</div></div>
+    <div class="divider"></div>
+    <div class="status-pill off" id="status-pill">
+      <span class="pulse" id="status-dot"></span>
       <span id="status-text">Connecting...</span>
     </div>
   </div>
 </header>
 
-<div id="alert-bar" id="alert-bar">⚠ <span id="alert-text"></span></div>
+<div class="content">
+  <!-- Map -->
+  <div style="position:relative;">
+    <div id="map" style="height:100%;width:100%;"></div>
+    <div id="alert-bar">⚠ <span id="alert-text"></span></div>
+  </div>
 
-<div class="main">
-  <div id="map"></div>
-  <div class="right-panel">
-    <div class="panel-section">
-      <div class="section-header">
-        <span class="section-title">Vessels — Zeebrugge approach</span>
-        <span style="font-size:.7rem;color:var(--accent)" id="live-count">0 live</span>
+  <!-- Side panel -->
+  <div class="side">
+
+    <!-- N4 Schedule -->
+    <div class="sched-section">
+      <div class="section-head">
+        <span class="section-title">📋 N4 Vessel Schedule</span>
+        <span style="font-size:.65rem;color:var(--muted)">Planned arrivals</span>
+      </div>
+      <div class="sched-list" id="sched-list"></div>
+    </div>
+
+    <!-- Live vessels -->
+    <div class="live-section">
+      <div class="section-head">
+        <span class="section-title">📡 Live AIS Vessels</span>
+        <span style="font-size:.68rem;color:var(--accent);font-weight:700" id="live-count">0 tracked</span>
       </div>
       <div class="vessel-list" id="vessel-list">
-        <div class="placeholder">
-          <span class="placeholder-icon">🚢</span>
-          <span>Connecting to AIS feed...</span>
+        <div class="empty">
+          <span class="empty-icon">🌊</span>
+          <span>Scanning North Sea...</span>
         </div>
       </div>
     </div>
+
+    <!-- ETA deviation chart -->
     <div class="chart-section">
-      <h3>ETA deviation — scheduled vs actual (minutes)</h3>
-      <canvas id="etaChart" height="100"></canvas>
+      <div class="chart-title">ETA deviation vs N4 schedule (min)</div>
+      <canvas id="etaChart" height="90"></canvas>
     </div>
+
   </div>
+</div>
 </div>
 
 <script>
-// ── CONFIG — set your aisstream.io API key here ──────────────────────
-const AIS_API_KEY = '897a66335782442231c37a9761fcce9accd8f6f3';
+// ════════════════════════════════════════════════════════════════
+// CONFIG
+// ════════════════════════════════════════════════════════════════
+const API_KEY = '897a66335782442231c37a9761fcce9accd8f6f3';
+const TERMINAL = { lat: 51.3491, lon: 3.1966 };
 
-// Bounding box: North Sea + English Channel approach to Zeebrugge
-const BBOX = [[50.0, 1.0], [52.5, 5.0]];
+// Wide bounding box: entire North Sea + English Channel
+// This ensures we see LOTS of vessels
+const BBOX = [[48.5, -2.0], [53.5, 8.0]];
 
-// Zeebrugge terminal coordinates
-const TERMINAL = { lat: 51.348, lon: 3.196 };
-
-// Simulated N4 vessel schedule (in production: fetched from N4 REST API)
-const N4_SCHEDULE = [
-  { name: 'COSCO SHIPPING AQUARIUS', eta: hoursFromNow(-0.5), service: 'AEX', carrier: 'COSCO' },
-  { name: 'OOCL HONG KONG',          eta: hoursFromNow(2),    service: 'EC2', carrier: 'OOCL'  },
-  { name: 'MSC ALLEGRA',             eta: hoursFromNow(4.5),  service: 'AEX', carrier: 'MSC'   },
-  { name: 'EVER GLORY',              eta: hoursFromNow(7),    service: 'FE4', carrier: 'EGLV'  },
-  { name: 'CMA CGM MARCO POLO',      eta: hoursFromNow(11),   service: 'FAL', carrier: 'CMDU'  },
+// Simulated N4 schedule
+const N4 = [
+  { name:'COSCO AQUARIUS',    eta:fromNow(0.5),  service:'AEX', carrier:'COSCO' },
+  { name:'OOCL HONG KONG',   eta:fromNow(2.5),  service:'EC2', carrier:'OOCL'  },
+  { name:'MSC ALLEGRA',      eta:fromNow(4),    service:'AEX', carrier:'MSC'   },
+  { name:'EVER GLORY',       eta:fromNow(7),    service:'FE4', carrier:'EGLV'  },
+  { name:'CMA CGM MARCO',    eta:fromNow(10),   service:'FAL', carrier:'CMDU'  },
+  { name:'HAPAG BRUSSELS',   eta:fromNow(14),   service:'AX2', carrier:'HLXU'  },
 ];
 
-// ── State ────────────────────────────────────────────────────────────
-let vessels = {}, markers = {}, selectedMmsi = null;
-let etaHistory = [], etaChart = null, map = null;
-let msgCount = 0, alertCount = 0;
+// ════════════════════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════════════════════
+let vessels={}, markers={}, map, etaChart;
+let selectedMmsi=null, msgCount=0, alertCount=0;
+let etaHistory=[], schedStatus={};
 
-// ── Map ──────────────────────────────────────────────────────────────
-function initMap() {
-  map = L.map('map', { zoomControl: true, attributionControl: false })
-         .setView([51.2, 3.0], 8);
+// ════════════════════════════════════════════════════════════════
+// MAP
+// ════════════════════════════════════════════════════════════════
+function initMap(){
+  map = L.map('map',{zoomControl:true,attributionControl:false}).setView([51.5,3.5],7);
 
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    maxZoom: 18, subdomains: 'abcd'
+  // Dark ocean tiles
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
+    maxZoom:18, subdomains:'abcd'
   }).addTo(map);
 
-  // Terminal marker
-  L.marker([TERMINAL.lat, TERMINAL.lon], {
-    icon: L.divIcon({
-      html: '<div style="background:#388bfd;color:white;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.4)">⚓ CSP Zeebrugge</div>',
-      iconAnchor: [65, 10], className: ''
-    })
-  }).addTo(map);
-
-  // Approach zone
-  L.rectangle(BBOX, { color:'#388bfd', weight:1, fillOpacity:0.03, dashArray:'5' }).addTo(map);
-
-  // Scheduled vessels (ghost markers)
-  N4_SCHEDULE.forEach(s => {
-    L.circleMarker([51.0, 2.5 + Math.random() * 1.5], {
-      radius: 5, color: '#8b949e', fillColor: '#8b949e',
-      fillOpacity: 0.3, weight: 1, dashArray: '3'
-    }).addTo(map).bindTooltip(`📋 Scheduled: ${s.name}<br>ETA: ${fmt(s.eta)} | ${s.service}`, {
-      className: 'vessel-tooltip'
-    });
+  // Terminal marker — prominent
+  const termIcon = L.divIcon({
+    html:`<div style="
+      background:linear-gradient(135deg,#1a4a8a,#2d8cff);
+      color:white;padding:4px 12px;border-radius:6px;
+      font-size:11px;font-weight:800;white-space:nowrap;
+      box-shadow:0 4px 16px rgba(45,140,255,.5);
+      border:1px solid rgba(45,140,255,.6);
+    ">⚓ CSP Zeebrugge</div>`,
+    iconAnchor:[65,14], className:''
   });
+  L.marker([TERMINAL.lat,TERMINAL.lon],{icon:termIcon,zIndexOffset:1000}).addTo(map)
+   .bindTooltip('CSP Zeebrugge Terminal<br>Leopold II-dam, Kaai 120-122<br>Navis N4 TOS · Camco VBS',
+     {className:'vtip',direction:'right'});
+
+  // Approach zone circle (25km radius)
+  L.circle([TERMINAL.lat,TERMINAL.lon],{
+    radius:25000, color:'#2d8cff', weight:1,
+    fillOpacity:.04, dashArray:'6 4'
+  }).addTo(map).bindTooltip('25km approach zone',{className:'vtip'});
+
+  // Bounding box
+  L.rectangle(BBOX,{color:'#2d8cff',weight:.5,fillOpacity:.02,dashArray:'8'}).addTo(map);
+
+  // Ship lanes (English Channel, North Sea) — visual guides
+  const lanes = [
+    [[51.5,1.5],[52.5,3.5],[52.8,4.5]], // UK → Zeebrugge lane
+    [[51.0,2.0],[51.3,3.2]],            // Channel → Zeebrugge
+  ];
+  lanes.forEach(pts => L.polyline(pts,{color:'#2d8cff',weight:.8,opacity:.2,dashArray:'4'}).addTo(map));
 }
 
-// ── AIS WebSocket ─────────────────────────────────────────────────────
-function connect() {
-  setStatus('connecting', 'Connecting...');
+// ════════════════════════════════════════════════════════════════
+// AIS WEBSOCKET
+// ════════════════════════════════════════════════════════════════
+function connect(){
+  setStatus('off','Connecting...');
   const ws = new WebSocket('wss://stream.aisstream.io/v0/stream');
 
-  ws.onopen = () => {
+  ws.onopen = ()=>{
     ws.send(JSON.stringify({
-      APIKey: AIS_API_KEY,
+      APIKey: API_KEY,
       BoundingBoxes: [BBOX],
-      FilterMessageTypes: ['PositionReport', 'ShipStaticData']
+      FilterMessageTypes: ['PositionReport','ShipStaticData']
     }));
-    setStatus('live', 'Live — AIS feed active');
+    setStatus('live','Live — AIS active');
   };
 
-  ws.onmessage = e => {
+  ws.onmessage = e=>{
     msgCount++;
-    document.getElementById('h-msgs').textContent = msgCount.toLocaleString();
-    handleMsg(JSON.parse(e.data));
+    if(msgCount%50===0) document.getElementById('h-msgs').textContent=msgCount.toLocaleString();
+    try{ onMsg(JSON.parse(e.data)); }catch(err){}
   };
 
-  ws.onerror = () => setStatus('error', 'Connection error');
-  ws.onclose = () => {
-    setStatus('off', 'Disconnected — retrying...');
-    setTimeout(connect, 5000); // auto-reconnect
-  };
+  ws.onerror = ()=>setStatus('off','Connection error');
+  ws.onclose = ()=>{ setStatus('off','Reconnecting...'); setTimeout(connect,4000); };
 }
 
-// ── Message handler ───────────────────────────────────────────────────
-function handleMsg(msg) {
-  const mmsi = String(msg.MetaData?.MMSI || '');
+function onMsg(msg){
+  const mmsi = String(msg.MetaData?.MMSI||'');
   const lat  = msg.MetaData?.latitude;
   const lon  = msg.MetaData?.longitude;
-  if (!mmsi || !lat || !lon) return;
+  if(!mmsi||lat===undefined||lon===undefined) return;
 
-  const existing = vessels[mmsi] || {};
+  const v = vessels[mmsi] || {mmsi};
 
-  if (msg.MessageType === 'PositionReport') {
-    const p = msg.Message?.PositionReport || {};
-    vessels[mmsi] = { ...existing, mmsi, lat, lon,
-      sog: p.Sog || 0, cog: p.Cog || 0,
-      name: existing.name || msg.MetaData?.ShipName?.trim() || mmsi,
-      lastSeen: new Date()
+  if(msg.MessageType==='PositionReport'){
+    const p = msg.Message?.PositionReport||{};
+    vessels[mmsi] = {...v, lat, lon,
+      sog: p.Sog||0, cog: p.Cog||0,
+      name: v.name || msg.MetaData?.ShipName?.trim()||mmsi,
+      lastSeen: Date.now()
+    };
+  } else if(msg.MessageType==='ShipStaticData'){
+    const s = msg.Message?.ShipStaticData||{};
+    vessels[mmsi] = {...v, lat, lon,
+      name: s.Name?.trim()||v.name||mmsi,
+      dest: s.Destination?.trim()||v.dest||'',
+      type: s.Type||v.type||0,
+      lastSeen: Date.now()
     };
   }
 
-  if (msg.MessageType === 'ShipStaticData') {
-    const s = msg.Message?.ShipStaticData || {};
-    vessels[mmsi] = { ...existing, mmsi, lat, lon,
-      name: s.Name?.trim() || existing.name || mmsi,
-      destination: s.Destination?.trim() || '',
-      lastSeen: new Date()
-    };
-  }
-
-  const v = vessels[mmsi];
-
-  // ETA calculation
-  if (v.sog > 0.5) {
-    const dist = haversine(v.lat, v.lon, TERMINAL.lat, TERMINAL.lon);
-    v.distKm = Math.round(dist);
-    v.calcEta = new Date(Date.now() + (dist / (v.sog * 1.852)) * 3600000);
-
-    // Match against N4 schedule
-    const sched = N4_SCHEDULE.find(s =>
-      v.name && (v.name.includes(s.name.split(' ')[0]) || s.name.includes(v.name.split(' ')[0]))
-    );
-    if (sched) {
-      v.schedEta = sched.eta;
-      v.service  = sched.service;
-      v.devMin   = Math.round((v.calcEta - sched.eta) / 60000);
-      if (Math.abs(v.devMin) > 120) {
-        alertCount++;
-        document.getElementById('h-alerts').textContent = alertCount;
-        showAlert(`${v.name} — ETA deviation ${v.devMin > 0 ? '+' : ''}${v.devMin} min vs N4 schedule (${sched.service})`);
-      }
-      etaHistory.push({ t: new Date(), name: v.name, dev: v.devMin });
-      if (etaHistory.length > 30) etaHistory.shift();
-      updateChart();
-    }
-  }
-
+  calcETA(mmsi);
   updateMarker(mmsi);
-  renderList();
-  document.getElementById('h-vessels').textContent = Object.keys(vessels).length;
-  document.getElementById('live-count').textContent = Object.keys(vessels).length + ' live';
+
+  // Throttle renders
+  if(msgCount%10===0){ renderList(); renderSched(); updateHeaderKPIs(); }
 }
 
-// ── Markers ───────────────────────────────────────────────────────────
-function updateMarker(mmsi) {
+// ════════════════════════════════════════════════════════════════
+// ETA CALCULATION
+// ════════════════════════════════════════════════════════════════
+function calcETA(mmsi){
   const v = vessels[mmsi];
-  if (!v?.lat) return;
-  const col = etaColor(v.devMin);
-  const icon = L.divIcon({
-    html: `<div style="position:relative">
-      <div style="width:11px;height:11px;border-radius:50%;background:${col};border:2px solid rgba(255,255,255,.7);box-shadow:0 0 8px ${col}99;"></div>
-    </div>`,
-    iconAnchor: [5,5], className: ''
-  });
-  const tip = `<b>${v.name}</b><br>
-    🚀 ${(v.sog||0).toFixed(1)} kn &nbsp;
-    📍 ${v.distKm||'?'} km<br>
-    🕐 ETA ${v.calcEta ? fmt(v.calcEta) : '—'}
-    ${v.devMin !== undefined ? `<br>⚠ Dev: <b style="color:${col}">${v.devMin>0?'+':''}${v.devMin} min</b>` : ''}`;
+  if(!v?.lat||!v?.lon) return;
+  const dist = haversine(v.lat,v.lon,TERMINAL.lat,TERMINAL.lon);
+  v.distKm = Math.round(dist);
 
-  if (markers[mmsi]) {
+  if(v.sog>0.3){
+    v.calcEta = new Date(Date.now()+(dist/(v.sog*1.852))*3600000);
+  }
+
+  // Match N4 schedule by name similarity
+  const match = N4.find(s=>nameSim(v.name,s.name));
+  if(match){
+    v.schedEta  = match.eta;
+    v.service   = match.service;
+    v.devMin    = Math.round((v.calcEta-match.eta)/60000);
+    schedStatus[match.name] = v.devMin;
+
+    if(Math.abs(v.devMin)>90){
+      alertCount++;
+      document.getElementById('h-alerts').textContent=alertCount;
+      flashAlert(`${v.name} — ETA ${v.devMin>0?'+':''}${v.devMin}min vs N4 schedule (${match.service})`);
+    }
+    etaHistory.push({t:new Date(),dev:v.devMin,name:v.name});
+    if(etaHistory.length>40) etaHistory.shift();
+    updateChart();
+  }
+}
+
+function nameSim(a='',b=''){
+  const wa = a.toUpperCase().split(/\s+/);
+  const wb = b.toUpperCase().split(/\s+/);
+  return wa.some(w=>w.length>3&&wb.includes(w));
+}
+
+// ════════════════════════════════════════════════════════════════
+// MARKERS
+// ════════════════════════════════════════════════════════════════
+function updateMarker(mmsi){
+  const v = vessels[mmsi];
+  if(!v?.lat) return;
+
+  const col  = devColor(v.devMin);
+  const size = v.sog>10 ? 10 : v.sog>5 ? 8 : 6;
+  const rot  = v.cog||0;
+
+  // Ship arrow icon
+  const html = `<div style="
+    width:${size}px;height:${size}px;
+    background:${col};
+    border:1.5px solid rgba(255,255,255,.6);
+    border-radius:50% 50% 50% 0;
+    transform:rotate(${rot-45}deg);
+    box-shadow:0 0 6px ${col}88;
+  "></div>`;
+
+  const icon = L.divIcon({html, iconAnchor:[size/2,size/2], className:''});
+
+  const dist = v.distKm ? `${v.distKm} km` : '?';
+  const eta  = v.calcEta ? fmtTime(v.calcEta) : '—';
+  const dev  = v.devMin!==undefined ? `<br><b style="color:${col}">${v.devMin>0?'+':''}${v.devMin} min</b> vs N4` : '';
+  const tip  = `<b>${v.name}</b><br>⚡ ${(v.sog||0).toFixed(1)} kn &nbsp; 📍 ${dist}<br>🕐 ETA ${eta}${dev}${v.dest?`<br>→ ${v.dest}`:''}`;
+
+  if(markers[mmsi]){
     markers[mmsi].setLatLng([v.lat,v.lon]).setIcon(icon);
     markers[mmsi].setTooltipContent(tip);
   } else {
-    markers[mmsi] = L.marker([v.lat,v.lon],{icon}).addTo(map)
-      .bindTooltip(tip,{className:'vessel-tooltip',direction:'top',offset:[0,-8]})
+    markers[mmsi] = L.marker([v.lat,v.lon],{icon})
+      .addTo(map)
+      .bindTooltip(tip,{className:'vtip',direction:'top',offset:[0,-6]})
       .on('click',()=>selectVessel(mmsi));
   }
 }
 
-// ── Vessel list ───────────────────────────────────────────────────────
-function renderList() {
+// ════════════════════════════════════════════════════════════════
+// RENDER — vessel list
+// ════════════════════════════════════════════════════════════════
+function renderList(){
   const list = document.getElementById('vessel-list');
-  const arr = Object.values(vessels).filter(v=>v.lat).sort((a,b)=>(a.distKm||9999)-(b.distKm||9999));
+  const arr  = Object.values(vessels)
+    .filter(v=>v.lat)
+    .sort((a,b)=>(a.distKm||9999)-(b.distKm||9999))
+    .slice(0,60); // show top 60 closest
 
-  if (!arr.length) {
-    list.innerHTML = '<div class="placeholder"><span class="placeholder-icon">📡</span><span>Scanning for vessels...</span></div>';
+  document.getElementById('live-count').textContent = Object.values(vessels).filter(v=>v.lat).length+' tracked';
+
+  if(!arr.length){
+    list.innerHTML='<div class="empty"><span class="empty-icon">🌊</span><span>Scanning North Sea...</span></div>';
     return;
   }
 
-  list.innerHTML = arr.map(v => {
+  list.innerHTML = arr.map(v=>{
     const dev = v.devMin;
-    const badgeCls = dev===undefined ? 'b-grey' : Math.abs(dev)<30 ? 'b-ok' : Math.abs(dev)<120 ? 'b-warn' : 'b-late';
-    const badgeTxt = dev===undefined ? 'No schedule' : `${dev>0?'+':''}${dev} min`;
-    const eta = v.calcEta ? fmt(v.calcEta) : '—';
-    const dest = v.destination ? ` → ${v.destination}` : '';
+    const cls = dev===undefined?'db-grey':Math.abs(dev)<30?'db-ok':Math.abs(dev)<90?'db-warn':'db-late';
+    const lbl = dev===undefined?'No schedule':`${dev>0?'+':''}${dev}m`;
+    const col = devColor(dev);
+    const eta = v.calcEta?fmtTime(v.calcEta):'—';
 
-    return `<div class="vessel-row ${selectedMmsi===v.mmsi?'selected':''}" onclick="selectVessel('${v.mmsi}')">
-      <div class="vr-top">
+    return `<div class="vrow ${selectedMmsi===v.mmsi?'selected':''}" onclick="selectVessel('${v.mmsi}')">
+      <div class="vrow-top">
+        <div style="width:6px;height:6px;border-radius:50%;background:${col};flex-shrink:0;box-shadow:0 0 4px ${col}88;"></div>
         <span class="vname" title="${v.name}">${v.name}</span>
-        <span class="badge ${badgeCls}">${badgeTxt}</span>
+        <span class="dev-badge ${cls}">${lbl}</span>
       </div>
       <div class="vmeta">
-        <span>⚡ ${(v.sog||0).toFixed(1)} kn</span>
-        ${v.distKm ? `<span>📍 ${v.distKm} km</span>` : ''}
-        <span>🕐 ${eta}</span>
-        ${v.service ? `<span style="color:var(--accent)">● ${v.service}</span>` : ''}
-        ${dest ? `<span>${dest}</span>` : ''}
+        <span>⚡${(v.sog||0).toFixed(1)}kn</span>
+        ${v.distKm?`<span>📍${v.distKm}km</span>`:''}
+        <span>🕐${eta}</span>
+        ${v.service?`<span style="color:var(--accent)">●${v.service}</span>`:''}
+        ${v.dest?`<span>→${v.dest.substring(0,12)}</span>`:''}
       </div>
     </div>`;
   }).join('');
 }
 
-function selectVessel(mmsi) {
-  selectedMmsi = mmsi;
-  const v = vessels[mmsi];
-  if (v?.lat) { map.panTo([v.lat,v.lon]); map.setZoom(10); }
-  renderList();
+// ════════════════════════════════════════════════════════════════
+// RENDER — N4 schedule
+// ════════════════════════════════════════════════════════════════
+function renderSched(){
+  const el = document.getElementById('sched-list');
+  el.innerHTML = N4.map(s=>{
+    const dev = schedStatus[s.name];
+    const cls = dev===undefined?'ss-none':Math.abs(dev)<30?'ss-ok':Math.abs(dev)<120?'ss-warn':'ss-late';
+    const lbl = dev===undefined?'Awaiting AIS':`${dev>0?'+':''}${dev} min`;
+    return `<div class="sched-row">
+      <span class="sched-service">${s.service}</span>
+      <span class="sched-name" title="${s.name}">${s.name}</span>
+      <span class="sched-eta">${fmtTime(s.eta)}</span>
+      <span class="sched-status ${cls}">${lbl}</span>
+    </div>`;
+  }).join('');
 }
 
-// ── Chart ─────────────────────────────────────────────────────────────
-function initChart() {
+// ════════════════════════════════════════════════════════════════
+// CHART
+// ════════════════════════════════════════════════════════════════
+function initChart(){
   const ctx = document.getElementById('etaChart').getContext('2d');
-  etaChart = new Chart(ctx, {
-    type: 'line',
-    data: { labels: [], datasets: [{
-      data: [], borderColor: '#388bfd',
-      backgroundColor: 'rgba(56,139,253,0.08)',
-      fill: true, tension: 0.4, pointRadius: 3,
-      pointBackgroundColor: '#388bfd', borderWidth: 1.5
-    }]},
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { ticks:{color:'#8b949e',font:{size:9},maxTicksLimit:6}, grid:{color:'rgba(48,54,61,0.6)'} },
-        y: { ticks:{color:'#8b949e',callback:v=>`${v>0?'+':''}${v}m`}, grid:{color:'rgba(48,54,61,0.6)'},
-             suggestedMin:-60, suggestedMax:60 }
+  etaChart = new Chart(ctx,{
+    type:'bar',
+    data:{labels:[],datasets:[{data:[],backgroundColor:[],borderRadius:3,borderSkipped:false}]},
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{
+        label:c=>`${c.raw>0?'+':''}${c.raw} min`
+      }}},
+      scales:{
+        x:{ticks:{color:'#6b7a8d',font:{size:9},maxTicksLimit:10},grid:{color:'rgba(30,45,66,.5)'}},
+        y:{
+          ticks:{color:'#6b7a8d',callback:v=>`${v>0?'+':''}${v}m`},
+          grid:{color:'rgba(30,45,66,.5)'},
+          suggestedMin:-120,suggestedMax:120
+        }
       }
     }
   });
 }
 
-function updateChart() {
-  if (!etaChart || !etaHistory.length) return;
-  etaChart.data.labels = etaHistory.map(p=>fmt(p.t));
-  etaChart.data.datasets[0].data = etaHistory.map(p=>p.dev);
-  etaChart.data.datasets[0].pointBackgroundColor = etaHistory.map(p=>etaColor(p.dev));
+function updateChart(){
+  if(!etaChart||!etaHistory.length) return;
+  const recent = etaHistory.slice(-20);
+  etaChart.data.labels = recent.map(p=>fmtTime(p.t));
+  etaChart.data.datasets[0].data = recent.map(p=>p.dev);
+  etaChart.data.datasets[0].backgroundColor = recent.map(p=>devColor(p.dev)+'99');
   etaChart.update('none');
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────
-function haversine(lat1,lon1,lat2,lon2){
-  const R=6371,d2r=Math.PI/180;
-  const dLat=(lat2-lat1)*d2r, dLon=(lon2-lon1)*d2r;
-  const a=Math.sin(dLat/2)**2+Math.cos(lat1*d2r)*Math.cos(lat2*d2r)*Math.sin(dLon/2)**2;
-  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-}
-function etaColor(dev){
-  if(dev===undefined)return'#8b949e';
-  return Math.abs(dev)<30?'#3fb950':Math.abs(dev)<120?'#d29922':'#f85149';
-}
-function fmt(d){ return d?.toLocaleTimeString('nl-BE',{hour:'2-digit',minute:'2-digit'})||'—'; }
-function hoursFromNow(h){ return new Date(Date.now()+h*3600000); }
-function setStatus(state,text){
-  document.getElementById('status-dot').className='dot'+(state==='live'?' live':'');
-  document.getElementById('status-text').textContent=text;
-}
-function showAlert(msg){
-  const bar=document.getElementById('alert-bar');
-  bar.style.display='block';
-  document.getElementById('alert-text').textContent=msg;
-  setTimeout(()=>bar.style.display='none',8000);
+// ════════════════════════════════════════════════════════════════
+// HEADER KPIs
+// ════════════════════════════════════════════════════════════════
+function updateHeaderKPIs(){
+  const arr = Object.values(vessels).filter(v=>v.lat&&v.sog);
+  document.getElementById('h-vessels').textContent = arr.length;
+  if(arr.length){
+    const avg = arr.reduce((s,v)=>s+(v.sog||0),0)/arr.length;
+    document.getElementById('h-speed').textContent = avg.toFixed(1);
+  }
 }
 
-// ── Boot ──────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════
+// HELPERS
+// ════════════════════════════════════════════════════════════════
+function selectVessel(mmsi){
+  selectedMmsi=mmsi;
+  const v=vessels[mmsi];
+  if(v?.lat){ map.panTo([v.lat,v.lon]); map.setZoom(Math.max(map.getZoom(),9)); }
+  renderList();
+}
+
+function haversine(a,b,c,d){
+  const R=6371,r=Math.PI/180;
+  const dl=(c-a)*r,dn=(d-b)*r;
+  const x=Math.sin(dl/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin(dn/2)**2;
+  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
+function devColor(dev){
+  if(dev===undefined) return'#6b7a8d';
+  return Math.abs(dev)<30?'#00d4a0':Math.abs(dev)<90?'#ffa502':'#ff4757';
+}
+
+function fmtTime(d){
+  if(!d) return'—';
+  return new Date(d).toLocaleTimeString('nl-BE',{hour:'2-digit',minute:'2-digit'});
+}
+
+function fromNow(h){ return new Date(Date.now()+h*3600000); }
+
+function setStatus(state,text){
+  const pill=document.getElementById('status-pill');
+  const dot=document.getElementById('status-dot');
+  document.getElementById('status-text').textContent=text;
+  if(state==='live'){
+    pill.className='status-pill';
+    dot.style.background='var(--green)';
+    dot.style.animation='pulse 1.5s infinite';
+  } else {
+    pill.className='status-pill off';
+    dot.style.background='var(--muted)';
+    dot.style.animation='none';
+  }
+}
+
+let alertTimer=null;
+function flashAlert(msg){
+  const bar=document.getElementById('alert-bar');
+  document.getElementById('alert-text').textContent=msg;
+  bar.style.display='block';
+  clearTimeout(alertTimer);
+  alertTimer=setTimeout(()=>bar.style.display='none',7000);
+}
+
+// ════════════════════════════════════════════════════════════════
+// BOOT
+// ════════════════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded',()=>{
   initMap();
   initChart();
+  renderSched();
   connect();
 });
 </script>
