@@ -49,8 +49,9 @@ wss.on('connection', (client) => {
             (sub.APIKey || '').slice(-6));
         });
 
-        upstream.on('message', (data) => {
-          if (client.readyState === WebSocket.OPEN) client.send(data);
+        upstream.on('message', (data, isBinary) => {
+          if (client.readyState === WebSocket.OPEN)
+            client.send(isBinary ? data : data.toString(), { binary: false });
         });
 
         upstream.on('close',  (code, reason) => {
