@@ -289,6 +289,12 @@
     .ph-ico{font-size:1.7rem;opacity:.18;}
     .ph-ttl{font-size:.76rem;font-weight:600;color:var(--text2);}
     .ph-sub{font-size:.67rem;}
+
+    /* Approach badge */
+    .tag-appr{background:rgba(196,138,10,.18);color:#d4a020;padding:1px 5px;border-radius:3px;font-size:.58rem;font-weight:700;letter-spacing:.02em;}
+
+    /* Flag emoji in vessel list */
+    .vrow-flag{font-size:.7rem;flex-shrink:0;line-height:1;}
   </style>
 </head>
 <body>
@@ -331,9 +337,9 @@
 <!-- ── KPI Bar ── -->
 <div id="kpi-bar">
   <div class="kpi">
-    <span class="kpi-label">Vessels tracked</span>
-    <span class="kpi-val cv-blue" id="k-total">0</span>
-    <span class="kpi-sub">in monitoring zone</span>
+    <span class="kpi-label">Next Arrival</span>
+    <span class="kpi-val cv-blue" id="k-next-rel">—</span>
+    <span class="kpi-sub" id="k-next-name">—</span>
   </div>
   <div class="kpi">
     <span class="kpi-label">On Time</span>
@@ -355,6 +361,11 @@
     <span class="kpi-val cv-red" id="k-crits">0</span>
     <span class="kpi-sub">&gt;120 min behind</span>
   </div>
+  <div class="kpi">
+    <span class="kpi-label">Approaching</span>
+    <span class="kpi-val cv-muted" id="k-appr">0</span>
+    <span class="kpi-sub">&lt; 25 km to port</span>
+  </div>
   <div class="wx-kpi">
     <span class="wx-label">North Sea · Wandelaar</span>
     <div class="wx-row">
@@ -365,7 +376,7 @@
     <div class="wx-src" id="wx-src">Loading weather…</div>
   </div>
   <div class="kpi" style="border-right:none;margin-left:auto;">
-    <span class="kpi-label">Last AIS update</span>
+    <span class="kpi-label">Current Time</span>
     <span class="kpi-val cv-muted" style="font-size:.82rem;font-weight:600" id="k-upd">—</span>
     <span class="kpi-sub" id="k-feed">—</span>
   </div>
@@ -392,8 +403,8 @@
     <div class="filter-bar">
       <input class="search" id="srch" placeholder="Search vessel, service, berth…" oninput="renderList()"/>
       <button class="pill on" onclick="setFilter('all',this)">All</button>
-      <button class="pill"    onclick="setFilter('sched',this)">Sched</button>
-      <button class="pill"    onclick="setFilter('late',this)">Delayed</button>
+      <button class="pill"    onclick="setFilter('4h',this)">4h</button>
+      <button class="pill"    onclick="setFilter('12h',this)">12h</button>
     </div>
 
     <div class="sec-head">
@@ -590,12 +601,12 @@ const SPECS = {
 };
 
 const DEMO_SEED = [
-  { mmsi:'477307900', name:'COSCO SHIPPING AQUARIUS', svc:'AEX', voy:'AEX-041W', berth:'B1', lat:51.12, lon:1.85, sog:14.8, dev:-45  },
+  { mmsi:'477307900', name:'COSCO SHIPPING AQUARIUS', svc:'AEX', voy:'AEX-041W', berth:'B1', lat:51.32, lon:2.98, sog:6.5,  dev:-45  },
   { mmsi:'477551300', name:'OOCL HONG KONG',          svc:'EC2', voy:'EC2-019E', berth:'B2', lat:51.45, lon:1.62, sog:12.5, dev:138  },
   { mmsi:'563048800', name:'MSC ALLEGRA',             svc:'AEX', voy:'AEX-042W', berth:'B2', lat:52.05, lon:2.82, sog:16.2, dev:22   },
   { mmsi:'232026676', name:'EVER GOLDEN',             svc:'FE4', voy:'FE4-078W', berth:'B3', lat:51.88, lon:2.45, sog:15.1, dev:-18  },
   { mmsi:'477973600', name:'COSCO EUROPE',            svc:'AEX', voy:'AEX-043W', berth:'B1', lat:52.22, lon:3.48, sog:17.0, dev:82   },
-  { mmsi:'355786000', name:'EVER ACE',                svc:'FE4', voy:'FE4-079W', berth:'B4', lat:51.62, lon:1.78, sog:13.4, dev:8    },
+  { mmsi:'355786000', name:'EVER ACE',                svc:'FE4', voy:'FE4-079W', berth:'B4', lat:51.28, lon:3.12, sog:8.2,  dev:8    },
   { mmsi:'371613000', name:'MSC OSCAR',               svc:'EC2', voy:'EC2-020E', berth:'A1', lat:51.95, lon:3.92, sog:16.8, dev:-12  },
   { mmsi:'477609800', name:'CSCL GLOBE',              svc:'AEX', voy:'AEX-044W', berth:'B4', lat:51.72, lon:3.75, sog:11.8, dev:44   },
 ];
@@ -665,12 +676,12 @@ function scheduleRender() {
   _renderPending = true;
   setTimeout(() => {
     _renderPending = false;
-    renderList(); renderTimeline(); updateKPIs(); updCounters(); updTime();
+    renderList(); renderTimeline(); updateKPIs(); updCounters(); updTime(); updateNextArrivalKPI();
   }, 800);
 }
 
 // ─── App state ────────────────────────────────────────────────────────────────
-let ws=null, vessels={}, markers={}, selectedMmsi=null;
+let ws=null, vessels={}, markers={}, vesselLabels={}, selectedMmsi=null;
 let etaHist=[], etaChart=null, map=null;
 let demoMode=false, demoTimer=null, wxTimer=null;
 let curFilter='all', alertLog=[], alerted=new Set(), conflicts=[];
@@ -687,6 +698,9 @@ function initMap() {
     attribution:'© OpenStreetMap contributors © CARTO', maxZoom:19
   }).addTo(map);
   L.control.zoom({position:'bottomright'}).addTo(map);
+  map.on('zoom', () => {
+    Object.keys(vessels).forEach(mmsi => updateLabel(mmsi));
+  });
 
   L.marker([PORT.lat, PORT.lon],{ icon:L.divIcon({
     html:`<div style="background:linear-gradient(135deg,#1a5a8a,#0f3d5e);color:#b8d8f0;padding:3px 9px;border-radius:5px;font-size:10px;font-weight:700;white-space:nowrap;border:1px solid rgba(100,170,220,.3);box-shadow:0 2px 10px rgba(0,0,0,.45)">⚓ CSP Zeebrugge</div>`,
@@ -957,6 +971,7 @@ function stopDemo() {
   document.getElementById('demo-pill').classList.remove('on');
   document.getElementById('conflict-pill').classList.remove('on');
   Object.values(markers).forEach(m=>m.remove());
+  Object.keys(vesselLabels).forEach(m=>{vesselLabels[m].remove();delete vesselLabels[m];});
   markers={}; vessels={}; alerted.clear(); conflicts=[];
   if (approachLine){approachLine.remove();approachLine=null;}
   selectedMmsi=null;
@@ -1088,6 +1103,7 @@ function applyVessel(mmsi, data) {
   // Filter: only keep relevant vessels for CSP Zeebrugge
   if (!isRelevantVessel(v) && !SPECS[mmsi]) {
     if (markers[mmsi]) { markers[mmsi].remove(); delete markers[mmsi]; }
+    if (vesselLabels[mmsi]) { vesselLabels[mmsi].remove(); delete vesselLabels[mmsi]; }
     delete vessels[mmsi];
     return;
   }
@@ -1099,6 +1115,7 @@ function applyVessel(mmsi, data) {
     const toDrop = sorted.slice(0, allMmsi.length - MAX_VESSELS);
     toDrop.forEach(m => {
       if (markers[m]) { markers[m].remove(); delete markers[m]; }
+      if (vesselLabels[m]) { vesselLabels[m].remove(); delete vesselLabels[m]; }
       delete vessels[m];
     });
   }
@@ -1137,6 +1154,7 @@ function putMarker(mmsi) {
       .bindTooltip(tip,{permanent:false,className:'vtip',direction:'top',offset:[0,-10]})
       .on('click',()=>selectVessel(mmsi));
   }
+  updateLabel(mmsi);
 }
 
 function updateApproachLine(v) {
@@ -1179,10 +1197,13 @@ function renderDetail(v) {
     : '';
   const typeLbl = sp.type || shipTypeName(v.shipType);
   const hasZee  = ZEE_DESTS.some(d=>((v.dest||'').toUpperCase()).includes(d));
+  const flag = mmsiFlag(v.mmsi);
+  const relETA = fmtRelETA(v.calcEta);
+  const calcETAStr = v.calcEta ? (relETA && relETA!=='—' ? `${fmtTime(v.calcEta)} (${relETA})` : fmtTime(v.calcEta)) : '—';
   document.getElementById('dinn').innerHTML=`
     <div class="dhead">
       <div>
-        <div class="dname">${v.name||v.mmsi}</div>
+        <div class="dname">${flag?flag+' ':''} ${v.name||v.mmsi}</div>
         <div class="dvoy">${
           v.voy ? `${v.svc||''} · Voyage ${v.voy}` :
           v.dest ? `Destination: <span style="color:${hasZee?'#3fc05a':'var(--text2)'}">${v.dest.trim()}</span>` :
@@ -1198,12 +1219,15 @@ function renderDetail(v) {
       <div class="dfield"><span class="df-label">Speed</span><span class="df-val">${v.sog?v.sog.toFixed(1)+' kn':'—'}</span></div>
       <div class="dfield"><span class="df-label">Course</span><span class="df-val">${v.cog!=null?Math.round(v.cog)+'°':'—'}</span></div>
       <div class="dfield"><span class="df-label">Distance to port</span><span class="df-val">${v.distKm!=null?v.distKm+' km':'—'}</span></div>
-      <div class="dfield"><span class="df-label">Calc ETA Zeebrugge</span><span class="df-val">${v.calcEta?fmtTime(v.calcEta):'—'}</span></div>
+      <div class="dfield"><span class="df-label">Calc ETA Zeebrugge</span><span class="df-val">${calcETAStr}</span></div>
       ${v.schedEta?`<div class="dfield"><span class="df-label">Scheduled ETA</span><span class="df-val">${fmtTime(v.schedEta)}</span></div>`:''}
       ${sp.teu?`<div class="dfield"><span class="df-label">Capacity</span><span class="df-val">${sp.teu.toLocaleString()} TEU</span></div>`:''}
       ${sp.loa?`<div class="dfield"><span class="df-label">LOA / Draft</span><span class="df-val">${sp.loa} m / ${sp.draft} m</span></div>`:''}
       ${sp.ops?`<div class="dfield"><span class="df-label">Ops window</span><span class="df-val">~${sp.ops} h</span></div>`:''}
       ${sp.agent?`<div class="dfield" style="grid-column:1/-1"><span class="df-label">Shipping Agent</span><span class="df-val" style="font-size:.71rem">${sp.agent}</span></div>`:''}
+    </div>
+    <div style="margin-top:.38rem;margin-bottom:.1rem">
+      <a href="https://www.marinetraffic.com/en/ais/details/ships/mmsi:${v.mmsi}" target="_blank" rel="noopener" style="font-size:.67rem;color:var(--accent-hi);text-decoration:none;display:inline-flex;align-items:center;gap:.25rem;opacity:.85">🔗 MarineTraffic</a>
     </div>
     ${v.dev!==undefined?`<div class="dev-row"><div><div class="dev-label">ETA Deviation</div><div class="dev-status">${status}</div></div><div class="dev-val" style="color:${col}">${sign}${v.dev} min</div></div>`:''}
     ${impactHtml}
@@ -1223,8 +1247,8 @@ function renderList() {
   const q = document.getElementById('srch').value.toLowerCase();
   let rows = Object.values(vessels).filter(v=>v.lat)
     .sort((a,b)=>(a.distKm||999)-(b.distKm||999));
-  if (curFilter==='sched')  rows=rows.filter(v=>v.schedEta);
-  if (curFilter==='late')   rows=rows.filter(v=>v.dev>30);
+  if (curFilter==='4h')  rows=rows.filter(v=>v.calcEta && v.calcEta-Date.now()<4*3600000 && v.calcEta>Date.now());
+  if (curFilter==='12h') rows=rows.filter(v=>v.calcEta && v.calcEta-Date.now()<12*3600000 && v.calcEta>Date.now());
   if (q) rows=rows.filter(v=>
     (v.name||'').toLowerCase().includes(q)||
     (v.svc||'').toLowerCase().includes(q)||
@@ -1261,19 +1285,24 @@ function renderList() {
     const typeLbl = sp.type || shipTypeName(v.shipType);
     const destLbl = v.dest && !v.svc ? v.dest.trim().slice(0,10) : '';
     const hasZee = ZEE_DESTS.some(d=>((v.dest||'').toUpperCase()).includes(d));
+    const isAppr = v.distKm!=null && v.distKm<25;
+    const flag = mmsiFlag(v.mmsi);
+    const relETA = fmtRelETA(v.calcEta);
     return `<div class="vrow${selectedMmsi===v.mmsi?' sel':''}${stale?' stale':''}" onclick="selectVessel('${v.mmsi}')">
       <div class="vrow-top">
+        ${flag?`<span class="vrow-flag">${flag}</span>`:''}
         <span class="vname">${v.name||v.mmsi}</span>
         ${v.svc?`<span class="tag-svc">${v.svc}</span>`:''}
         ${v.berth?`<span class="tag-berth">${v.berth}</span>`:''}
         ${typeLbl?`<span class="tag-type">${typeLbl}</span>`:''}
+        ${isAppr?`<span class="tag-appr">APPR</span>`:''}
         ${bt?`<span class="etab ${bc}">${bt}</span>`:''}
         ${hasConf?`<span class="conf-icon" title="Berth conflict">⚓</span>`:''}
       </div>
       <div class="vmeta-row">
         <span class="vmeta">⚡ ${(v.sog||0).toFixed(1)} kn</span>
         ${v.distKm?`<span class="vmeta">📍 ${v.distKm} km</span>`:''}
-        <span class="vmeta">${v.calcEta?'ETA '+fmtTime(v.calcEta):'no ETA'}</span>
+        <span class="vmeta">${v.calcEta?'ETA '+fmtTime(v.calcEta)+(relETA&&relETA!='—'?' ('+relETA+')':''):'no ETA'}</span>
         ${destLbl?`<span class="vmeta" style="color:${hasZee?'#3fc05a':'var(--muted)'}">→ ${destLbl}</span>`:''}
         ${stale?'<span class="vmeta" style="color:var(--yellow)">⚠ stale</span>':''}
       </div>
@@ -1288,8 +1317,6 @@ function updateKPIs() {
   const onT   = sched.filter(v=>Math.abs(v.dev)<CFG.warnMin);
   const crits = sched.filter(v=>v.dev>CFG.critMin);
   const avg   = sched.length ? Math.round(sched.reduce((s,v)=>s+v.dev,0)/sched.length) : null;
-
-  document.getElementById('k-total').textContent = all.length;
 
   const kotEl=document.getElementById('k-ontime');
   if (sched.length) {
@@ -1306,6 +1333,10 @@ function updateKPIs() {
   } else { kavEl.textContent='—'; kavEl.className='kpi-val cv-muted'; }
 
   document.getElementById('k-crits').textContent=crits.length;
+
+  const appr = all.filter(v=>v.distKm!=null && v.distKm<25);
+  document.getElementById('k-appr').textContent = appr.length;
+  document.getElementById('k-appr').className = 'kpi-val ' + (appr.length>0?'cv-yellow':'cv-muted');
 }
 
 // ─── Weather — real data via Open-Meteo (no API key needed) ──────────────────
@@ -1470,6 +1501,72 @@ function doExport() {
   a.click();
 }
 
+// ─── Flag emoji from MMSI prefix ─────────────────────────────────────────────
+function mmsiFlag(mmsi) {
+  const p = String(mmsi).slice(0,3);
+  const m = {
+    '205':'🇧🇪','206':'🇧🇪','211':'🇩🇪','212':'🇩🇪','244':'🇳🇱','245':'🇳🇱','246':'🇳🇱',
+    '232':'🇬🇧','233':'🇬🇧','235':'🇬🇧','247':'🇮🇹','248':'🇲🇹','255':'🇵🇹','258':'🇳🇴',
+    '259':'🇳🇴','265':'🇸🇪','266':'🇸🇪','219':'🇩🇰','230':'🇫🇮','477':'🇭🇰','525':'🇮🇩',
+    '563':'🇸🇬','338':'🇺🇸','371':'🇵🇦','372':'🇵🇦','374':'🇵🇦','376':'🇵🇦','319':'🇰🇾',
+    '273':'🇷🇺','416':'🇹🇼'
+  };
+  return m[p] || '';
+}
+
+// ─── Relative ETA formatter ───────────────────────────────────────────────────
+function fmtRelETA(date) {
+  if (!date) return '—';
+  const diff = date - Date.now();
+  if (diff <= 0) return 'arrived';
+  const h = Math.floor(diff / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  if (h === 0) return 'in ' + m + 'm';
+  return 'in ' + h + 'h ' + (m > 0 ? m + 'm' : '');
+}
+
+// ─── Next Arrival KPI ─────────────────────────────────────────────────────────
+function updateNextArrivalKPI() {
+  const now = Date.now();
+  const future = Object.values(vessels).filter(v=>v.calcEta && v.calcEta>now && v.lat);
+  if (!future.length) {
+    document.getElementById('k-next-rel').textContent = '—';
+    document.getElementById('k-next-name').textContent = '—';
+    return;
+  }
+  future.sort((a,b)=>a.calcEta-b.calcEta);
+  const next = future[0];
+  const rel = fmtRelETA(next.calcEta);
+  const diff = next.calcEta - now;
+  const h = Math.floor(diff / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  const shortRel = h === 0 ? m + 'm' : h + 'h ' + (m > 0 ? m + 'm' : '');
+  document.getElementById('k-next-rel').textContent = shortRel;
+  const shortName = (next.name || next.mmsi).slice(0, 12);
+  document.getElementById('k-next-name').textContent = shortName;
+}
+
+// ─── Vessel name labels on map ────────────────────────────────────────────────
+function updateLabel(mmsi) {
+  const v = vessels[mmsi];
+  if (!v || !v.lat || !v.lon) return;
+  const zoom = map.getZoom();
+  if (zoom >= 9) {
+    const shortName = (v.name||mmsi).split(' ').slice(-1)[0]; // last word
+    const labelIcon = L.divIcon({
+      html: `<div style="background:rgba(9,14,23,.82);color:#9ab5cc;padding:1px 5px;border-radius:3px;font-size:9px;font-weight:600;white-space:nowrap;border:1px solid rgba(26,45,68,.8);pointer-events:none">${shortName}</div>`,
+      iconAnchor: [-4, 8], className: ''
+    });
+    if (vesselLabels[mmsi]) {
+      vesselLabels[mmsi].setLatLng([v.lat, v.lon]).setIcon(labelIcon);
+    } else {
+      vesselLabels[mmsi] = L.marker([v.lat, v.lon], {icon: labelIcon, interactive: false}).addTo(map);
+    }
+  } else {
+    if (vesselLabels[mmsi]) { vesselLabels[mmsi].remove(); delete vesselLabels[mmsi]; }
+  }
+}
+
 // ─── Utilities ────────────────────────────────────────────────────────────────
 function hav(la1,lo1,la2,lo2){const R=6371,dL=(la2-la1)*Math.PI/180,dO=(lo2-lo1)*Math.PI/180,a=Math.sin(dL/2)**2+Math.cos(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.sin(dO/2)**2;return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));}
 function bearing(la1,lo1,la2,lo2){const d=(lo2-lo1)*Math.PI/180,a=la1*Math.PI/180,b=la2*Math.PI/180;return((Math.atan2(Math.sin(d)*Math.cos(b),Math.cos(a)*Math.sin(b)-Math.sin(a)*Math.cos(b)*Math.cos(d))*180/Math.PI)+360)%360;}
@@ -1489,7 +1586,6 @@ function setStatus(cls, txt) {
 function updCounters() {
   const n=Object.values(vessels).filter(v=>v.lat).length;
   document.getElementById('live-ct').textContent=n+' live';
-  document.getElementById('k-total').textContent=n;
   document.getElementById('h-vn').textContent=n;
 }
 function updTime() {
@@ -1512,10 +1608,14 @@ window.addEventListener('load', () => {
   // Auto-connect to live AIS feed
   autoConnect();
 
+  // Live clock — update every second
+  setInterval(() => { document.getElementById('k-upd').textContent = fmtTimeSec(new Date()); }, 1000);
+
   // Periodic clock/timeline refresh
   setInterval(() => {
     updTime();
     if (Object.keys(vessels).length) renderTimeline();
+    updateNextArrivalKPI();
   }, 15000);
 
   // Remove stale vessels (no update in 12 min)
@@ -1525,6 +1625,7 @@ window.addEventListener('load', () => {
       const v = vessels[mmsi];
       if (v.lastSeen && v.lastSeen.getTime() < cutoff) {
         if (markers[mmsi]) { markers[mmsi].remove(); delete markers[mmsi]; }
+        if (vesselLabels[mmsi]) { vesselLabels[mmsi].remove(); delete vesselLabels[mmsi]; }
         if (selectedMmsi === mmsi) closeDetail();
         delete vessels[mmsi];
       }
