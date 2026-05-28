@@ -4,80 +4,73 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Vessel ETA Tracker — CSP Zeebrugge</title>
-
-  <!-- Leaflet map -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
   <style>
     :root {
-      --bg: #0d1117; --surface: #161b22; --surface2: #21262d;
-      --border: #30363d; --text: #e6edf3; --muted: #8b949e;
-      --accent: #388bfd; --green: #3fb950; --red: #f85149;
-      --yellow: #d29922; --font: 'Segoe UI', system-ui, sans-serif;
+      --bg:#0d1117;--surface:#161b22;--surface2:#21262d;--border:#30363d;
+      --text:#e6edf3;--muted:#8b949e;--accent:#388bfd;--green:#3fb950;
+      --red:#f85149;--yellow:#d29922;--font:'Segoe UI',system-ui,sans-serif;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; height: 100vh; display: flex; flex-direction: column; }
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;height:100vh;display:flex;flex-direction:column;overflow:hidden;}
 
     /* Header */
-    header { background: var(--surface); border-bottom: 1px solid var(--border); padding: .9rem 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
-    .brand { display: flex; align-items: center; gap: .75rem; }
-    .brand-icon { font-size: 1.6rem; }
-    .brand h1 { font-size: 1rem; font-weight: 600; }
-    .brand p { color: var(--muted); font-size: .72rem; margin-top: 1px; }
-    .header-right { display: flex; align-items: center; gap: 1rem; }
-    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; margin-right: 4px; }
-    .status-dot.connected { background: var(--green); animation: pulse 2s infinite; }
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
-    #status-text { font-size: .8rem; color: var(--muted); }
+    header{background:var(--surface);border-bottom:1px solid var(--border);padding:.75rem 1.5rem;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;}
+    .brand{display:flex;align-items:center;gap:.75rem;}
+    .brand-icon{font-size:1.5rem;}
+    .brand h1{font-size:1rem;font-weight:700;}
+    .brand p{color:var(--muted);font-size:.7rem;margin-top:1px;}
+    .header-right{display:flex;align-items:center;gap:1.5rem;}
+    .hkpi{text-align:center;}
+    .hkpi-val{font-size:1.1rem;font-weight:700;color:var(--accent);}
+    .hkpi-label{font-size:.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
+    .status-pill{display:flex;align-items:center;gap:.4rem;background:var(--surface2);border:1px solid var(--border);padding:.3rem .75rem;border-radius:20px;font-size:.75rem;}
+    .dot{width:7px;height:7px;border-radius:50%;background:var(--muted);}
+    .dot.live{background:var(--green);animation:pulse 1.5s infinite;}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 
-    /* API key bar */
-    #api-bar { background: var(--surface2); border-bottom: 1px solid var(--border); padding: .6rem 1.5rem; display: flex; align-items: center; gap: .75rem; flex-shrink: 0; }
-    #api-bar label { font-size: .78rem; color: var(--muted); white-space: nowrap; }
-    #api-key-input { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: .35rem .75rem; border-radius: 6px; font-size: .82rem; width: 340px; outline: none; }
-    #api-key-input:focus { border-color: var(--accent); }
-    #connect-btn { background: var(--accent); color: white; border: none; padding: .35rem 1rem; border-radius: 6px; font-size: .82rem; cursor: pointer; font-weight: 600; }
-    #connect-btn:hover { opacity: .85; }
-    #connect-btn.disconnect { background: var(--red); }
-    .api-hint { font-size: .72rem; color: var(--muted); }
-    .api-hint a { color: var(--accent); text-decoration: none; }
-
-    /* Main layout */
-    .main-layout { display: grid; grid-template-columns: 1fr 420px; grid-template-rows: 1fr 200px; flex: 1; overflow: hidden; gap: 0; }
+    /* Main */
+    .main{display:grid;grid-template-columns:1fr 400px;flex:1;overflow:hidden;}
 
     /* Map */
-    #map { grid-row: 1 / 3; background: #0a0e14; }
-    .leaflet-container { background: #0a0e14 !important; }
+    #map{background:#080c12;}
+    .leaflet-container{background:#080c12!important;}
 
-    /* Vessel table */
-    #vessel-panel { background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
-    .panel-header { padding: .75rem 1rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
-    .panel-header h2 { font-size: .78rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
-    .vessel-count { font-size: .72rem; color: var(--accent); font-weight: 600; }
-    .vessel-list { overflow-y: auto; flex: 1; }
-    .vessel-row { padding: .65rem 1rem; border-bottom: 1px solid var(--surface2); cursor: pointer; transition: background .1s; }
-    .vessel-row:hover { background: var(--surface2); }
-    .vessel-row.selected { background: rgba(56,139,253,.1); border-left: 2px solid var(--accent); }
-    .vessel-name { font-weight: 600; font-size: .85rem; }
-    .vessel-meta { color: var(--muted); font-size: .72rem; margin-top: 2px; display: flex; gap: 1rem; }
-    .eta-badge { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: .68rem; font-weight: 600; margin-left: auto; }
-    .eta-ok     { background: rgba(63,185,80,.15); color: var(--green); }
-    .eta-warn   { background: rgba(210,153,34,.15); color: var(--yellow); }
-    .eta-late   { background: rgba(248,81,73,.15); color: var(--red); }
-    .vessel-row-top { display: flex; align-items: center; gap: .5rem; }
+    /* Right panel */
+    .right-panel{display:flex;flex-direction:column;border-left:1px solid var(--border);overflow:hidden;}
 
-    /* Chart panel */
-    #chart-panel { background: var(--surface); border-left: 1px solid var(--border); border-top: 1px solid var(--border); padding: 1rem; }
-    #chart-panel h2 { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: .75rem; }
+    /* Vessel list */
+    .panel-section{flex:1;display:flex;flex-direction:column;overflow:hidden;}
+    .section-header{padding:.6rem 1rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;background:var(--surface);}
+    .section-title{font-size:.72rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
+    .vessel-list{overflow-y:auto;flex:1;}
+    .vessel-row{padding:.6rem 1rem;border-bottom:1px solid var(--surface2);cursor:pointer;}
+    .vessel-row:hover{background:var(--surface2);}
+    .vessel-row.selected{background:rgba(56,139,253,.08);border-left:2px solid var(--accent);}
+    .vr-top{display:flex;align-items:center;gap:.5rem;margin-bottom:3px;}
+    .vname{font-weight:600;font-size:.82rem;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .badge{padding:2px 7px;border-radius:10px;font-size:.65rem;font-weight:700;white-space:nowrap;}
+    .b-ok{background:rgba(63,185,80,.15);color:var(--green);}
+    .b-warn{background:rgba(210,153,34,.15);color:var(--yellow);}
+    .b-late{background:rgba(248,81,73,.15);color:var(--red);}
+    .b-grey{background:rgba(139,148,158,.1);color:var(--muted);}
+    .vmeta{font-size:.68rem;color:var(--muted);display:flex;gap:.75rem;flex-wrap:wrap;}
 
-    /* No vessels placeholder */
-    .placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--muted); gap: .5rem; font-size: .85rem; }
-    .placeholder .icon { font-size: 2rem; opacity: .4; }
+    /* Chart */
+    .chart-section{flex-shrink:0;border-top:1px solid var(--border);padding:.75rem 1rem;background:var(--surface);}
+    .chart-section h3{font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem;}
+
+    /* Alert bar */
+    #alert-bar{display:none;background:rgba(248,81,73,.1);border-bottom:1px solid var(--red);padding:.4rem 1.5rem;font-size:.78rem;color:var(--red);flex-shrink:0;}
 
     /* Tooltip */
-    .vessel-tooltip { background: var(--surface) !important; border: 1px solid var(--border) !important; color: var(--text) !important; font-family: var(--font) !important; font-size: 12px !important; padding: 6px 10px !important; border-radius: 6px !important; box-shadow: 0 4px 12px rgba(0,0,0,.4) !important; }
+    .vessel-tooltip{background:var(--surface)!important;border:1px solid var(--border)!important;color:var(--text)!important;font-family:var(--font)!important;font-size:11px!important;padding:6px 10px!important;border-radius:6px!important;box-shadow:0 4px 16px rgba(0,0,0,.5)!important;}
+
+    /* Placeholder */
+    .placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--muted);gap:.5rem;font-size:.82rem;}
+    .placeholder-icon{font-size:2rem;opacity:.3;}
   </style>
 </head>
 <body>
@@ -86,278 +79,242 @@
   <div class="brand">
     <span class="brand-icon">⚓</span>
     <div>
-      <h1>Vessel ETA Tracker</h1>
-      <p>Live AIS — CSP Zeebrugge approach | North Sea</p>
+      <h1>CSP Zeebrugge — Vessel ETA Monitor</h1>
+      <p>Live AIS · North Sea approach · Navis N4 schedule comparison</p>
     </div>
   </div>
   <div class="header-right">
-    <span class="status-dot" id="status-dot"></span>
-    <span id="status-text">Disconnected</span>
-    <span id="vessel-counter" style="font-size:.8rem;color:var(--muted)">0 vessels</span>
+    <div class="hkpi"><div class="hkpi-val" id="h-vessels">0</div><div class="hkpi-label">Vessels tracked</div></div>
+    <div class="hkpi"><div class="hkpi-val" id="h-alerts">0</div><div class="hkpi-label">ETA alerts</div></div>
+    <div class="hkpi"><div class="hkpi-val" id="h-msgs">0</div><div class="hkpi-label">AIS messages</div></div>
+    <div class="status-pill">
+      <span class="dot" id="status-dot"></span>
+      <span id="status-text">Connecting...</span>
+    </div>
   </div>
 </header>
 
-<div id="api-bar">
-  <label>aisstream.io API Key:</label>
-  <input id="api-key-input" type="password" placeholder="Paste your free API key from aisstream.io"/>
-  <button id="connect-btn" onclick="toggleConnection()">Connect</button>
-  <span class="api-hint">Free key at <a href="https://aisstream.io" target="_blank">aisstream.io</a> — sign up with GitHub</span>
-</div>
+<div id="alert-bar" id="alert-bar">⚠ <span id="alert-text"></span></div>
 
-<div class="main-layout">
+<div class="main">
   <div id="map"></div>
-
-  <div id="vessel-panel">
-    <div class="panel-header">
-      <h2>Vessels — Zeebrugge approach</h2>
-      <span class="vessel-count" id="live-count">0 live</span>
-    </div>
-    <div class="vessel-list" id="vessel-list">
-      <div class="placeholder">
-        <span class="icon">🚢</span>
-        <span>Connect to see live vessels</span>
+  <div class="right-panel">
+    <div class="panel-section">
+      <div class="section-header">
+        <span class="section-title">Vessels — Zeebrugge approach</span>
+        <span style="font-size:.7rem;color:var(--accent)" id="live-count">0 live</span>
+      </div>
+      <div class="vessel-list" id="vessel-list">
+        <div class="placeholder">
+          <span class="placeholder-icon">🚢</span>
+          <span>Connecting to AIS feed...</span>
+        </div>
       </div>
     </div>
-  </div>
-
-  <div id="chart-panel">
-    <h2>ETA Deviation — last 20 updates (minutes)</h2>
-    <canvas id="etaChart" height="140"></canvas>
+    <div class="chart-section">
+      <h3>ETA deviation — scheduled vs actual (minutes)</h3>
+      <canvas id="etaChart" height="100"></canvas>
+    </div>
   </div>
 </div>
 
 <script>
-// ── Config ──────────────────────────────────────────────────────────
-// Bounding box: North Sea approach to Zeebrugge
-// Covers the English Channel and southern North Sea
-const BBOX = [[50.5, 1.5], [52.5, 4.5]];
+// ── CONFIG — set your aisstream.io API key here ──────────────────────
+const AIS_API_KEY = '897a66335782442231c37a9761fcce9accd8f6f3';
+
+// Bounding box: North Sea + English Channel approach to Zeebrugge
+const BBOX = [[50.0, 1.0], [52.5, 5.0]];
+
+// Zeebrugge terminal coordinates
+const TERMINAL = { lat: 51.348, lon: 3.196 };
 
 // Simulated N4 vessel schedule (in production: fetched from N4 REST API)
 const N4_SCHEDULE = [
-  { mmsi: '477307900', name: 'COSCO SHIPPING AQUARIUS', eta: offsetHours(-1), service: 'AEX' },
-  { mmsi: '477551300', name: 'OOCL HONG KONG',          eta: offsetHours(2),  service: 'EC2' },
-  { mmsi: '563048800', name: 'MSC ALLEGRA',             eta: offsetHours(5),  service: 'AEX' },
-  { mmsi: '232026676', name: 'EVER GOLDEN',             eta: offsetHours(8),  service: 'FE4' },
-  { mmsi: '477973600', name: 'COSCO EUROPE',            eta: offsetHours(12), service: 'AEX' },
+  { name: 'COSCO SHIPPING AQUARIUS', eta: hoursFromNow(-0.5), service: 'AEX', carrier: 'COSCO' },
+  { name: 'OOCL HONG KONG',          eta: hoursFromNow(2),    service: 'EC2', carrier: 'OOCL'  },
+  { name: 'MSC ALLEGRA',             eta: hoursFromNow(4.5),  service: 'AEX', carrier: 'MSC'   },
+  { name: 'EVER GLORY',              eta: hoursFromNow(7),    service: 'FE4', carrier: 'EGLV'  },
+  { name: 'CMA CGM MARCO POLO',      eta: hoursFromNow(11),   service: 'FAL', carrier: 'CMDU'  },
 ];
 
 // ── State ────────────────────────────────────────────────────────────
-let socket = null;
-let vessels = {};        // mmsi → vessel data
-let markers = {};        // mmsi → leaflet marker
-let selectedMmsi = null;
-let etaHistory = [];     // last 20 ETA deviation points
-let etaChart = null;
-let map = null;
+let vessels = {}, markers = {}, selectedMmsi = null;
+let etaHistory = [], etaChart = null, map = null;
+let msgCount = 0, alertCount = 0;
 
-// ── Map init ─────────────────────────────────────────────────────────
+// ── Map ──────────────────────────────────────────────────────────────
 function initMap() {
-  map = L.map('map', { zoomControl: true }).setView([51.35, 3.2], 9);
+  map = L.map('map', { zoomControl: true, attributionControl: false })
+         .setView([51.2, 3.0], 8);
 
-  // Dark tile layer
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    attribution: '© OpenStreetMap © CARTO',
-    maxZoom: 18
+    maxZoom: 18, subdomains: 'abcd'
   }).addTo(map);
 
-  // CSP Zeebrugge terminal marker
-  L.marker([51.348, 3.196], {
+  // Terminal marker
+  L.marker([TERMINAL.lat, TERMINAL.lon], {
     icon: L.divIcon({
-      html: '<div style="background:#388bfd;color:white;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;white-space:nowrap">⚓ CSP Zeebrugge</div>',
-      iconAnchor: [60, 10],
-      className: ''
+      html: '<div style="background:#388bfd;color:white;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.4)">⚓ CSP Zeebrugge</div>',
+      iconAnchor: [65, 10], className: ''
     })
   }).addTo(map);
 
-  // Bounding box rectangle
-  L.rectangle(BBOX, { color: '#388bfd', weight: 1, fillOpacity: 0.04, dashArray: '4' }).addTo(map);
+  // Approach zone
+  L.rectangle(BBOX, { color:'#388bfd', weight:1, fillOpacity:0.03, dashArray:'5' }).addTo(map);
+
+  // Scheduled vessels (ghost markers)
+  N4_SCHEDULE.forEach(s => {
+    L.circleMarker([51.0, 2.5 + Math.random() * 1.5], {
+      radius: 5, color: '#8b949e', fillColor: '#8b949e',
+      fillOpacity: 0.3, weight: 1, dashArray: '3'
+    }).addTo(map).bindTooltip(`📋 Scheduled: ${s.name}<br>ETA: ${fmt(s.eta)} | ${s.service}`, {
+      className: 'vessel-tooltip'
+    });
+  });
 }
 
-// ── AIS Connection ────────────────────────────────────────────────────
-function toggleConnection() {
-  if (socket && socket.readyState === WebSocket.OPEN) {
-    disconnect();
-  } else {
-    connect();
-  }
-}
-
+// ── AIS WebSocket ─────────────────────────────────────────────────────
 function connect() {
-  const apiKey = document.getElementById('api-key-input').value.trim();
-  if (!apiKey) {
-    alert('Please enter your aisstream.io API key first.\nGet a free key at aisstream.io');
-    return;
-  }
-
   setStatus('connecting', 'Connecting...');
+  const ws = new WebSocket('wss://stream.aisstream.io/v0/stream');
 
-  socket = new WebSocket('wss://stream.aisstream.io/v0/stream');
-
-  socket.onopen = () => {
-    const subscription = {
-      APIKey: apiKey,
+  ws.onopen = () => {
+    ws.send(JSON.stringify({
+      APIKey: AIS_API_KEY,
       BoundingBoxes: [BBOX],
       FilterMessageTypes: ['PositionReport', 'ShipStaticData']
-    };
-    socket.send(JSON.stringify(subscription));
-    setStatus('connected', 'Live — receiving AIS');
-    document.getElementById('connect-btn').textContent = 'Disconnect';
-    document.getElementById('connect-btn').classList.add('disconnect');
+    }));
+    setStatus('live', 'Live — AIS feed active');
   };
 
-  socket.onmessage = (event) => {
-    const msg = JSON.parse(event.data);
-    handleAISMessage(msg);
+  ws.onmessage = e => {
+    msgCount++;
+    document.getElementById('h-msgs').textContent = msgCount.toLocaleString();
+    handleMsg(JSON.parse(e.data));
   };
 
-  socket.onerror = () => setStatus('error', 'Connection error — check API key');
-  socket.onclose = () => {
-    setStatus('disconnected', 'Disconnected');
-    document.getElementById('connect-btn').textContent = 'Connect';
-    document.getElementById('connect-btn').classList.remove('disconnect');
+  ws.onerror = () => setStatus('error', 'Connection error');
+  ws.onclose = () => {
+    setStatus('off', 'Disconnected — retrying...');
+    setTimeout(connect, 5000); // auto-reconnect
   };
 }
 
-function disconnect() {
-  if (socket) socket.close();
-}
-
-// ── AIS Message Handler ───────────────────────────────────────────────
-function handleAISMessage(msg) {
+// ── Message handler ───────────────────────────────────────────────────
+function handleMsg(msg) {
   const mmsi = String(msg.MetaData?.MMSI || '');
-  const name = msg.MetaData?.ShipName?.trim() || mmsi;
   const lat  = msg.MetaData?.latitude;
   const lon  = msg.MetaData?.longitude;
-
   if (!mmsi || !lat || !lon) return;
 
-  // Position report
+  const existing = vessels[mmsi] || {};
+
   if (msg.MessageType === 'PositionReport') {
-    const pos = msg.Message?.PositionReport;
-    const sog = pos?.Sog || 0;   // Speed over ground (knots)
-    const cog = pos?.Cog || 0;   // Course over ground
-
-    updateVessel(mmsi, { name, lat, lon, sog, cog, lastSeen: new Date() });
+    const p = msg.Message?.PositionReport || {};
+    vessels[mmsi] = { ...existing, mmsi, lat, lon,
+      sog: p.Sog || 0, cog: p.Cog || 0,
+      name: existing.name || msg.MetaData?.ShipName?.trim() || mmsi,
+      lastSeen: new Date()
+    };
   }
 
-  // Static data (ship name, type, destination)
   if (msg.MessageType === 'ShipStaticData') {
-    const sd = msg.Message?.ShipStaticData;
-    updateVessel(mmsi, {
-      name: sd?.Name?.trim() || name,
-      destination: sd?.Destination?.trim() || '',
-      shipType: sd?.Type || 0,
-      lat, lon, lastSeen: new Date()
-    });
+    const s = msg.Message?.ShipStaticData || {};
+    vessels[mmsi] = { ...existing, mmsi, lat, lon,
+      name: s.Name?.trim() || existing.name || mmsi,
+      destination: s.Destination?.trim() || '',
+      lastSeen: new Date()
+    };
   }
-}
 
-function updateVessel(mmsi, data) {
-  vessels[mmsi] = { ...(vessels[mmsi] || {}), ...data, mmsi };
-
-  // Calculate ETA based on distance + speed
   const v = vessels[mmsi];
-  if (v.lat && v.lon && v.sog > 0.5) {
-    const distKm = haversine(v.lat, v.lon, 51.348, 3.196);
-    const etaHours = distKm / (v.sog * 1.852);
-    v.calculatedEta = new Date(Date.now() + etaHours * 3600000);
-    v.distKm = Math.round(distKm);
 
-    // Compare with N4 schedule
-    const scheduled = N4_SCHEDULE.find(s => s.mmsi === mmsi || s.name === v.name);
-    if (scheduled) {
-      v.scheduledEta = scheduled.eta;
-      v.service = scheduled.service;
-      v.deviationMin = Math.round((v.calculatedEta - scheduled.eta) / 60000);
-      // Track for chart
-      etaHistory.push({ time: new Date(), name: v.name, dev: v.deviationMin });
-      if (etaHistory.length > 20) etaHistory.shift();
+  // ETA calculation
+  if (v.sog > 0.5) {
+    const dist = haversine(v.lat, v.lon, TERMINAL.lat, TERMINAL.lon);
+    v.distKm = Math.round(dist);
+    v.calcEta = new Date(Date.now() + (dist / (v.sog * 1.852)) * 3600000);
+
+    // Match against N4 schedule
+    const sched = N4_SCHEDULE.find(s =>
+      v.name && (v.name.includes(s.name.split(' ')[0]) || s.name.includes(v.name.split(' ')[0]))
+    );
+    if (sched) {
+      v.schedEta = sched.eta;
+      v.service  = sched.service;
+      v.devMin   = Math.round((v.calcEta - sched.eta) / 60000);
+      if (Math.abs(v.devMin) > 120) {
+        alertCount++;
+        document.getElementById('h-alerts').textContent = alertCount;
+        showAlert(`${v.name} — ETA deviation ${v.devMin > 0 ? '+' : ''}${v.devMin} min vs N4 schedule (${sched.service})`);
+      }
+      etaHistory.push({ t: new Date(), name: v.name, dev: v.devMin });
+      if (etaHistory.length > 30) etaHistory.shift();
       updateChart();
     }
   }
 
   updateMarker(mmsi);
-  updateVesselList();
-  updateCounter();
+  renderList();
+  document.getElementById('h-vessels').textContent = Object.keys(vessels).length;
+  document.getElementById('live-count').textContent = Object.keys(vessels).length + ' live';
 }
 
-// ── Map Markers ────────────────────────────────────────────────────────
+// ── Markers ───────────────────────────────────────────────────────────
 function updateMarker(mmsi) {
   const v = vessels[mmsi];
-  if (!v.lat || !v.lon) return;
-
-  const color = getEtaColor(v.deviationMin);
+  if (!v?.lat) return;
+  const col = etaColor(v.devMin);
   const icon = L.divIcon({
-    html: `<div style="
-      width:10px;height:10px;border-radius:50%;
-      background:${color};border:2px solid white;
-      box-shadow:0 0 6px ${color}88;
-      transform:rotate(${v.cog || 0}deg)
-    "></div>`,
-    iconAnchor: [5, 5],
-    className: ''
+    html: `<div style="position:relative">
+      <div style="width:11px;height:11px;border-radius:50%;background:${col};border:2px solid rgba(255,255,255,.7);box-shadow:0 0 8px ${col}99;"></div>
+    </div>`,
+    iconAnchor: [5,5], className: ''
   });
+  const tip = `<b>${v.name}</b><br>
+    🚀 ${(v.sog||0).toFixed(1)} kn &nbsp;
+    📍 ${v.distKm||'?'} km<br>
+    🕐 ETA ${v.calcEta ? fmt(v.calcEta) : '—'}
+    ${v.devMin !== undefined ? `<br>⚠ Dev: <b style="color:${col}">${v.devMin>0?'+':''}${v.devMin} min</b>` : ''}`;
 
   if (markers[mmsi]) {
-    markers[mmsi].setLatLng([v.lat, v.lon]).setIcon(icon);
-    markers[mmsi].getTooltip()?.setContent(tooltipContent(v));
+    markers[mmsi].setLatLng([v.lat,v.lon]).setIcon(icon);
+    markers[mmsi].setTooltipContent(tip);
   } else {
-    markers[mmsi] = L.marker([v.lat, v.lon], { icon })
-      .addTo(map)
-      .bindTooltip(tooltipContent(v), {
-        permanent: false,
-        className: 'vessel-tooltip',
-        direction: 'top',
-        offset: [0, -8]
-      })
-      .on('click', () => selectVessel(mmsi));
+    markers[mmsi] = L.marker([v.lat,v.lon],{icon}).addTo(map)
+      .bindTooltip(tip,{className:'vessel-tooltip',direction:'top',offset:[0,-8]})
+      .on('click',()=>selectVessel(mmsi));
   }
 }
 
-function tooltipContent(v) {
-  const dev = v.deviationMin !== undefined
-    ? `<br>ETA dev: <b style="color:${getEtaColor(v.deviationMin)}">${v.deviationMin > 0 ? '+' : ''}${v.deviationMin} min</b>`
-    : '';
-  return `<b>${v.name || v.mmsi}</b><br>
-    Speed: ${(v.sog || 0).toFixed(1)} kn | 
-    ${v.distKm ? `${v.distKm} km out` : ''}
-    ${dev}`;
-}
-
-// ── Vessel List ────────────────────────────────────────────────────────
-function updateVesselList() {
+// ── Vessel list ───────────────────────────────────────────────────────
+function renderList() {
   const list = document.getElementById('vessel-list');
-  const sorted = Object.values(vessels)
-    .filter(v => v.lat)
-    .sort((a, b) => (a.distKm || 999) - (b.distKm || 999));
+  const arr = Object.values(vessels).filter(v=>v.lat).sort((a,b)=>(a.distKm||9999)-(b.distKm||9999));
 
-  if (sorted.length === 0) {
-    list.innerHTML = '<div class="placeholder"><span class="icon">🚢</span><span>Waiting for vessels...</span></div>';
+  if (!arr.length) {
+    list.innerHTML = '<div class="placeholder"><span class="placeholder-icon">📡</span><span>Scanning for vessels...</span></div>';
     return;
   }
 
-  list.innerHTML = sorted.map(v => {
-    const dev = v.deviationMin;
-    const badge = dev !== undefined
-      ? `<span class="eta-badge ${Math.abs(dev) < 30 ? 'eta-ok' : Math.abs(dev) < 120 ? 'eta-warn' : 'eta-late'}">
-          ${dev > 0 ? '+' : ''}${dev}m
-        </span>`
-      : '';
+  list.innerHTML = arr.map(v => {
+    const dev = v.devMin;
+    const badgeCls = dev===undefined ? 'b-grey' : Math.abs(dev)<30 ? 'b-ok' : Math.abs(dev)<120 ? 'b-warn' : 'b-late';
+    const badgeTxt = dev===undefined ? 'No schedule' : `${dev>0?'+':''}${dev} min`;
+    const eta = v.calcEta ? fmt(v.calcEta) : '—';
+    const dest = v.destination ? ` → ${v.destination}` : '';
 
-    const eta = v.calculatedEta
-      ? v.calculatedEta.toLocaleTimeString('nl-BE', {hour:'2-digit',minute:'2-digit'})
-      : '—';
-
-    return `<div class="vessel-row ${selectedMmsi === v.mmsi ? 'selected' : ''}" onclick="selectVessel('${v.mmsi}')">
-      <div class="vessel-row-top">
-        <span class="vessel-name">${v.name || v.mmsi}</span>
-        ${badge}
+    return `<div class="vessel-row ${selectedMmsi===v.mmsi?'selected':''}" onclick="selectVessel('${v.mmsi}')">
+      <div class="vr-top">
+        <span class="vname" title="${v.name}">${v.name}</span>
+        <span class="badge ${badgeCls}">${badgeTxt}</span>
       </div>
-      <div class="vessel-meta">
+      <div class="vmeta">
         <span>⚡ ${(v.sog||0).toFixed(1)} kn</span>
         ${v.distKm ? `<span>📍 ${v.distKm} km</span>` : ''}
-        <span>🕐 ETA ${eta}</span>
-        ${v.service ? `<span>🔵 ${v.service}</span>` : ''}
+        <span>🕐 ${eta}</span>
+        ${v.service ? `<span style="color:var(--accent)">● ${v.service}</span>` : ''}
+        ${dest ? `<span>${dest}</span>` : ''}
       </div>
     </div>`;
   }).join('');
@@ -366,84 +323,70 @@ function updateVesselList() {
 function selectVessel(mmsi) {
   selectedMmsi = mmsi;
   const v = vessels[mmsi];
-  if (v?.lat) map.panTo([v.lat, v.lon]);
-  updateVesselList();
+  if (v?.lat) { map.panTo([v.lat,v.lon]); map.setZoom(10); }
+  renderList();
 }
 
-// ── ETA Chart ──────────────────────────────────────────────────────────
+// ── Chart ─────────────────────────────────────────────────────────────
 function initChart() {
   const ctx = document.getElementById('etaChart').getContext('2d');
   etaChart = new Chart(ctx, {
     type: 'line',
-    data: {
-      labels: [],
-      datasets: [{
-        label: 'ETA deviation (min)',
-        data: [],
-        borderColor: '#388bfd',
-        backgroundColor: 'rgba(56,139,253,0.1)',
-        fill: true,
-        tension: 0.4,
-        pointRadius: 3,
-        pointBackgroundColor: '#388bfd'
-      }]
-    },
+    data: { labels: [], datasets: [{
+      data: [], borderColor: '#388bfd',
+      backgroundColor: 'rgba(56,139,253,0.08)',
+      fill: true, tension: 0.4, pointRadius: 3,
+      pointBackgroundColor: '#388bfd', borderWidth: 1.5
+    }]},
     options: {
-      responsive: true,
-      maintainAspectRatio: false,
+      responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: false } },
       scales: {
-        x: { ticks: { color: '#8b949e', font: { size: 10 }, maxTicksLimit: 8 }, grid: { color: 'rgba(48,54,61,0.8)' } },
-        y: { ticks: { color: '#8b949e', callback: v => `${v > 0 ? '+' : ''}${v}m` }, grid: { color: 'rgba(48,54,61,0.8)' } }
+        x: { ticks:{color:'#8b949e',font:{size:9},maxTicksLimit:6}, grid:{color:'rgba(48,54,61,0.6)'} },
+        y: { ticks:{color:'#8b949e',callback:v=>`${v>0?'+':''}${v}m`}, grid:{color:'rgba(48,54,61,0.6)'},
+             suggestedMin:-60, suggestedMax:60 }
       }
     }
   });
 }
 
 function updateChart() {
-  if (!etaChart || etaHistory.length === 0) return;
-  etaChart.data.labels = etaHistory.map(p => p.time.toLocaleTimeString('nl-BE', {hour:'2-digit',minute:'2-digit'}));
-  etaChart.data.datasets[0].data = etaHistory.map(p => p.dev);
-  etaChart.data.datasets[0].pointBackgroundColor = etaHistory.map(p =>
-    Math.abs(p.dev) < 30 ? '#3fb950' : Math.abs(p.dev) < 120 ? '#d29922' : '#f85149'
-  );
+  if (!etaChart || !etaHistory.length) return;
+  etaChart.data.labels = etaHistory.map(p=>fmt(p.t));
+  etaChart.data.datasets[0].data = etaHistory.map(p=>p.dev);
+  etaChart.data.datasets[0].pointBackgroundColor = etaHistory.map(p=>etaColor(p.dev));
   etaChart.update('none');
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────
-function haversine(lat1, lon1, lat2, lon2) {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+// ── Helpers ───────────────────────────────────────────────────────────
+function haversine(lat1,lon1,lat2,lon2){
+  const R=6371,d2r=Math.PI/180;
+  const dLat=(lat2-lat1)*d2r, dLon=(lon2-lon1)*d2r;
+  const a=Math.sin(dLat/2)**2+Math.cos(lat1*d2r)*Math.cos(lat2*d2r)*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+function etaColor(dev){
+  if(dev===undefined)return'#8b949e';
+  return Math.abs(dev)<30?'#3fb950':Math.abs(dev)<120?'#d29922':'#f85149';
+}
+function fmt(d){ return d?.toLocaleTimeString('nl-BE',{hour:'2-digit',minute:'2-digit'})||'—'; }
+function hoursFromNow(h){ return new Date(Date.now()+h*3600000); }
+function setStatus(state,text){
+  document.getElementById('status-dot').className='dot'+(state==='live'?' live':'');
+  document.getElementById('status-text').textContent=text;
+}
+function showAlert(msg){
+  const bar=document.getElementById('alert-bar');
+  bar.style.display='block';
+  document.getElementById('alert-text').textContent=msg;
+  setTimeout(()=>bar.style.display='none',8000);
 }
 
-function getEtaColor(dev) {
-  if (dev === undefined) return '#8b949e';
-  return Math.abs(dev) < 30 ? '#3fb950' : Math.abs(dev) < 120 ? '#d29922' : '#f85149';
-}
-
-function offsetHours(h) {
-  return new Date(Date.now() + h * 3600000);
-}
-
-function setStatus(state, text) {
-  const dot = document.getElementById('status-dot');
-  dot.className = 'status-dot' + (state === 'connected' ? ' connected' : '');
-  document.getElementById('status-text').textContent = text;
-}
-
-function updateCounter() {
-  const n = Object.values(vessels).filter(v => v.lat).length;
-  document.getElementById('vessel-counter').textContent = `${n} vessel${n !== 1 ? 's' : ''}`;
-  document.getElementById('live-count').textContent = `${n} live`;
-}
-
-// ── Init ───────────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
+// ── Boot ──────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded',()=>{
   initMap();
   initChart();
+  connect();
 });
 </script>
 </body>
